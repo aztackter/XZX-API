@@ -1,0 +1,22 @@
+{
+  "name": "roblox-bot-system",
+  "version": "2.0.0",
+  "description": "Advanced Roblox Bot Management System with Real Game Integration",
+  "main": "backend/src/server.js",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "dev": "nodemon backend/src/server.js",
+    "build": "npm install --prefix backend",
+    "test": "jest",
+    "lint": "eslint backend/src/",
+    "docker:build": "docker build -f docker/Dockerfile -t roblox-bot-system .",
+    "docker:run": "docker run -p 3000:3000 --env-file backend/.env roblox-bot-system"
+  },
+  "keywords": ["roblox", "bot", "automation", "railway", "game-bot"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
