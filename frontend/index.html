@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roblox Bot Control Panel</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <h2>Login to Control Panel</h2>
+            <form id="loginForm">
+                <input type="text" id="loginUsername" placeholder="Username" required>
+                <input type="password" id="loginPassword" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <h1>Roblox Bot Control Panel</h1>
+                <button onclick="logout()" class="logout-btn">Logout</button>
+            </div>
+            <div class="stats-overview">
+                <div class="stat-card">
+                    <h3>Total Bots</h3>
+                    <p id="totalBots">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Active Bots</h3>
+                    <p id="activeBots">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Actions</h3>
+                    <p id="totalRequests">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Errors</h3>
+                    <p id="errors">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Banned</h3>
+                    <p id="bannedAccounts">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Play Time</h3>
+                    <p id="totalPlayTime">0h 0m</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Proxies</h3>
+                    <p id="proxyCount">0/0</p>
+                </div>
+            </div>
+        </header>
+
+        <div class="create-bot-section">
+            <h2>Create New Bot</h2>
+            <form id="createBotForm">
+                <input type="text" id="username" placeholder="Roblox Username" required>
+                <input type="password" id="password" placeholder="Roblox Password" required>
+                <input type="text" id="gameId" placeholder="Game ID" required>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="useProxy" checked> Use Proxy
+                    </label>
+                    <label>
+                        <input type="checkbox" id="humanLike" checked> Human-like Behavior
+                    </label>
+                </div>
+                <button type="submit">Create Bot</button>
+            </form>
+        </div>
+
+        <div class="bots-section">
+            <h2>Active Bots</h2>
+            <div class="bots-grid" id="botsGrid"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
