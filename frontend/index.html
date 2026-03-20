@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Roblox Bot Control Panel</title>
+    <title>Bot Control Panel</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 </head>
 <body>
     <div class="app-container">
-        <!-- Top Navigation Bar -->
+        <!-- Top Navigation -->
         <nav class="top-nav">
             <div class="nav-left">
                 <span class="material-icons">dashboard</span>
@@ -31,89 +31,44 @@
 
         <!-- Main Layout -->
         <div class="main-layout">
-            <!-- Left Sidebar -->
+            <!-- Sidebar -->
             <aside class="sidebar">
                 <nav class="sidebar-nav">
                     <a href="#" class="nav-item active" data-page="dashboard">
-                        <span class="material-icons">dashboard</span>
-                        <span>Dashboard</span>
+                        <span class="material-icons">dashboard</span> Dashboard
                     </a>
                     <a href="#" class="nav-item" data-page="agents">
-                        <span class="material-icons">smart_toy</span>
-                        <span>Agents</span>
+                        <span class="material-icons">smart_toy</span> Agents
                     </a>
                     <a href="#" class="nav-item" data-page="activity">
-                        <span class="material-icons">history</span>
-                        <span>Activity</span>
+                        <span class="material-icons">history</span> Activity
                     </a>
                     <a href="#" class="nav-item" data-page="settings">
-                        <span class="material-icons">settings</span>
-                        <span>Settings</span>
+                        <span class="material-icons">settings</span> Settings
                     </a>
                 </nav>
             </aside>
 
             <!-- Main Content -->
             <main class="main-content">
-                <!-- Stats Cards -->
                 <div class="stats-grid" id="statsGrid">
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="material-icons">devices</span>
-                            <span class="stat-label">Active Sessions</span>
-                        </div>
-                        <div class="stat-value" id="activeSessions">0</div>
-                        <div class="stat-status online">● Online</div>
-                        <div class="stat-progress"></div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="material-icons">assignment</span>
-                            <span class="stat-label">Tasks Running</span>
-                        </div>
-                        <div class="stat-value" id="tasksRunning">0</div>
-                        <div class="stat-status progress">In Progress</div>
-                        <div class="stat-progress"></div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="material-icons">error</span>
-                            <span class="stat-label">Errors Detected</span>
-                        </div>
-                        <div class="stat-value" id="errorsDetected">0</div>
-                        <div class="stat-status error">Last 24 Hours</div>
-                        <div class="stat-progress"></div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="material-icons">schedule</span>
-                            <span class="stat-label">System Uptime</span>
-                        </div>
-                        <div class="stat-value" id="systemUptime">99.8%</div>
-                        <div class="stat-status operational">Operational</div>
-                        <div class="stat-progress"></div>
-                    </div>
+                    <!-- Stats cards added dynamically -->
                 </div>
-
-                <!-- Search and Controls -->
                 <div class="controls-bar">
                     <div class="search-container">
                         <span class="material-icons">search</span>
                         <input type="text" placeholder="Search Agents..." id="searchAgents">
                     </div>
                     <button class="manage-btn" id="createBotBtn">
-                        <span class="material-icons">add</span>
-                        Create New Bot
+                        <span class="material-icons">add</span> Create Bot
                     </button>
                 </div>
-
-                <!-- Agent Cards Grid -->
                 <div class="agents-grid" id="agentsGrid">
-                    <!-- Bots will be dynamically added here -->
+                    <!-- Bot cards added dynamically -->
                 </div>
             </main>
 
-            <!-- Right Activity Log Panel -->
+            <!-- Activity Panel -->
             <aside class="activity-panel">
                 <div class="panel-header">
                     <h3>Activity Log</h3>
@@ -123,7 +78,7 @@
                     </div>
                 </div>
                 <div class="activity-log" id="activityLog">
-                    <!-- Activity entries will be added here -->
+                    <!-- Logs dynamically added -->
                 </div>
             </aside>
         </div>
@@ -133,27 +88,22 @@
     <div id="createBotModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Create New Bot Agent</h2>
+                <h2>Create Bot</h2>
                 <button class="close-modal">&times;</button>
             </div>
             <form id="createBotForm">
-                <input type="text" id="botUsername" placeholder="Roblox Username" required>
-                <input type="password" id="botPassword" placeholder="Roblox Password" required>
+                <input type="text" id="botUsername" placeholder="Username" required>
+                <input type="password" id="botPassword" placeholder="Password" required>
                 <input type="text" id="botGameId" placeholder="Game ID" required>
                 <div class="checkbox-group">
-                    <label>
-                        <input type="checkbox" id="humanLike" checked> Human-like Behavior
-                    </label>
-                    <label>
-                        <input type="checkbox" id="autoReconnect" checked> Auto Reconnect
-                    </label>
+                    <label><input type="checkbox" id="humanLike" checked> Human-like</label>
+                    <label><input type="checkbox" id="autoReconnect" checked> Auto Reconnect</label>
                 </div>
                 <button type="submit" class="submit-btn">Create Agent</button>
             </form>
         </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
