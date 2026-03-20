@@ -1,18 +1,22 @@
-FROM node:18-alpine
+FROM node:20-slim AS base
+
 WORKDIR /app
+ENV NODE_ENV="production"
+
+# Install build dependencies if needed
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y build-essential python3
 
 # Copy package files
 COPY package*.json ./
 COPY backend/package*.json ./backend/
 
-# Install ALL dependencies from the root (this will handle both root and backend)
-RUN npm install
+# Install dependencies
+RUN npm ci --only=production
+RUN cd backend && npm ci --only=production
 
-# Copy the rest of the application
+# Copy application code
 COPY . .
 
-# Create logs directory
-RUN mkdir -p logs
-
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "backend/src/server.js"]
