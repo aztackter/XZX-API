@@ -42,7 +42,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'your-secret-key',
+    secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -85,7 +85,6 @@ app.post('/api/bots/create', authenticate, async (req, res) => {
                 error: 'Username, password, and gameId are required' 
             });
         }
-        const encryptedPassword = await bcrypt.hash(password, 10);
         const bot = await botManager.createBot(username, password, gameId, options);
         console.log(`Bot created: ${username} at ${new Date().toISOString()}`);
         res.json({ 
@@ -148,6 +147,14 @@ app.post('/api/admin/logout', (req, res) => {
     res.json({ success: true, message: 'Logged out' });
 });
 
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        bots: botManager.getStats().totalBots
+    });
+});
+
 io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (token === process.env.API_TOKEN) {
@@ -161,48 +168,66 @@ io.on('connection', (socket) => {
     console.log('Authenticated client connected');
     socket.emit('stats', botManager.getStats());
 
-    botManager.on('botCreated', (bot) => {
+    const botCreatedHandler = (bot) => {
         socket.emit('botCreated', bot);
         socket.emit('stats', botManager.getStats());
-    });
+    };
 
-    botManager.on('botUpdate', (bot) => {
+    const botUpdateHandler = (bot) => {
         socket.emit('botUpdate', bot);
-    });
+    };
 
-    botManager.on('botActivity', (activity) => {
+    const botActivityHandler = (activity) => {
         socket.emit('botActivity', activity);
-    });
+    };
 
-    botManager.on('botError', (error) => {
+    const botErrorHandler = (error) => {
         socket.emit('botError', error);
-    });
+    };
 
-    botManager.on('botStopped', (bot) => {
+    const botStoppedHandler = (bot) => {
         socket.emit('botStopped', bot);
         socket.emit('stats', botManager.getStats());
-    });
+    };
 
-    botManager.on('botStarted', (bot) => {
+    const botStartedHandler = (bot) => {
         socket.emit('botStarted', bot);
         socket.emit('stats', botManager.getStats());
-    });
+    };
+
+    botManager.on('botCreated', botCreatedHandler);
+    botManager.on('botUpdate', botUpdateHandler);
+    botManager.on('botActivity', botActivityHandler);
+    botManager.on('botError', botErrorHandler);
+    botManager.on('botStopped', botStoppedHandler);
+    botManager.on('botStarted', botStartedHandler);
 
     socket.on('disconnect', () => {
         console.log('Client disconnected');
+        botManager.removeListener('botCreated', botCreatedHandler);
+        botManager.removeListener('botUpdate', botUpdateHandler);
+        botManager.removeListener('botActivity', botActivityHandler);
+        botManager.removeListener('botError', botErrorHandler);
+        botManager.removeListener('botStopped', botStoppedHandler);
+        botManager.removeListener('botStarted', botStartedHandler);
     });
 });
 
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    console.error('Server error:', err.stack);
     res.status(500).json({ 
         error: 'Something went wrong!',
         message: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
 
+app.use('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../frontend/index.html'));
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
+    console.log(`Frontend serving from: ${path.join(__dirname, '../../frontend')}`);
 });
