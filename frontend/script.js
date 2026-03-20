@@ -1,13 +1,7 @@
-// Global state
 let bots = [];
 let activityEntries = [];
 let startTime = Date.now();
-let demoMode = true;
 
-// API Base URL (auto-detect)
-const API_BASE = window.location.origin;
-
-// Socket.IO connection
 let socket = null;
 try {
     socket = io({
@@ -16,8 +10,7 @@ try {
     });
     
     socket.on('connect_error', () => {
-        console.log('WebSocket failed, using demo mode');
-        demoMode = true;
+        console.log('WebSocket connection failed');
     });
     
     socket.on('botCreated', (bot) => {
@@ -30,19 +23,18 @@ try {
         addActivityLog(error.botId || 'System', `Error: ${error.error}`, 'red');
     });
 } catch (e) {
-    console.log('Socket.IO not available, using demo mode');
-    demoMode = true;
+    console.log('Socket.IO not available');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     fetchStats();
     fetchBots();
+    startUptimeCounter();
     startActivitySimulation();
 });
 
 function setupEventListeners() {
-    // Create bot button
     const createBtn = document.getElementById('createBotBtn');
     if (createBtn) {
         createBtn.addEventListener('click', () => {
@@ -50,7 +42,6 @@ function setupEventListeners() {
         });
     }
     
-    // Modal close
     const closeBtn = document.querySelector('.close-modal');
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
@@ -58,7 +49,6 @@ function setupEventListeners() {
         });
     }
     
-    // Modal background click
     const modal = document.getElementById('createBotModal');
     if (modal) {
         modal.addEventListener('click', (e) => {
@@ -68,7 +58,6 @@ function setupEventListeners() {
         });
     }
     
-    // Create bot form
     const form = document.getElementById('createBotForm');
     if (form) {
         form.addEventListener('submit', async (e) => {
@@ -77,7 +66,6 @@ function setupEventListeners() {
         });
     }
     
-    // Search input
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
@@ -85,7 +73,6 @@ function setupEventListeners() {
         });
     }
     
-    // Tabs
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', (e) => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -98,7 +85,6 @@ function setupEventListeners() {
         });
     });
     
-    // Sidebar navigation
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -108,86 +94,47 @@ function setupEventListeners() {
             switchPage(page);
         });
     });
-    
-    // Click outside modal to close
-    window.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.style.display = 'none';
-        }
-    });
 }
 
 async function fetchStats() {
     try {
-        const response = await fetch(`${API_BASE}/api/stats`, {
+        const response = await fetch('/api/stats', {
             headers: getHeaders()
         });
         if (response.ok) {
             const stats = await response.json();
-            updateStats(stats);
-            demoMode = false;
-        } else {
-            useDemoStats();
+            document.getElementById('activeSessions').textContent = stats.activeBots || 0;
+            document.getElementById('tasksRunning').textContent = stats.totalRequests || 0;
+            document.getElementById('errorsDetected').textContent = stats.errors || 0;
         }
     } catch (error) {
-        console.log('API unavailable, using demo stats');
-        useDemoStats();
+        console.log('Stats API unavailable');
     }
-}
-
-function useDemoStats() {
-    updateStats({
-        activeBots: 128,
-        totalRequests: 342,
-        errors: 15
-    });
-}
-
-function updateStats(stats) {
-    const activeSessions = document.getElementById('activeSessions');
-    const tasksRunning = document.getElementById('tasksRunning');
-    const errorsDetected = document.getElementById('errorsDetected');
-    
-    if (activeSessions) activeSessions.textContent = stats.activeBots || stats.activeSessions || 0;
-    if (tasksRunning) tasksRunning.textContent = stats.totalRequests || stats.tasksRunning || 0;
-    if (errorsDetected) errorsDetected.textContent = stats.errors || 0;
-    
-    const uptime = ((Date.now() - startTime) / 1000 / 3600).toFixed(1);
-    const uptimeElement = document.getElementById('systemUptime');
-    if (uptimeElement) uptimeElement.textContent = `${Math.min(99.9, parseFloat(uptime))}%`;
 }
 
 async function fetchBots() {
     try {
-        const response = await fetch(`${API_BASE}/api/bots`, {
+        const response = await fetch('/api/bots', {
             headers: getHeaders()
         });
         if (response.ok) {
             const data = await response.json();
             bots = data.bots || [];
             renderBotsGrid(bots);
-            demoMode = false;
         } else {
-            useDemoBots();
+            renderEmptyGrid();
         }
     } catch (error) {
-        console.log('API unavailable, using demo bots');
-        useDemoBots();
+        console.log('Bots API unavailable');
+        renderEmptyGrid();
     }
 }
 
-function useDemoBots() {
-    bots = [
-        { id: '1', username: 'Agent 01', displayName: 'Agent 01', status: 'online', gameId: '123456', stats: { actions: 12, playTime: 3600 }, behavior: { position: { x: 10, y: 0, z: 5 } } },
-        { id: '2', username: 'Agent 02', displayName: 'Agent 02', status: 'idle', gameId: '123456', stats: { actions: 3, playTime: 1800 }, behavior: { position: { x: 20, y: 0, z: 15 } } },
-        { id: '3', username: 'Agent 03', displayName: 'Agent 03', status: 'error', gameId: '123456', stats: { actions: 0, playTime: 300 }, behavior: { position: { x: 5, y: 0, z: 8 } } },
-        { id: '4', username: 'Agent 05', displayName: 'Agent 05', status: 'online', gameId: '789012', stats: { actions: 6, playTime: 5400 }, behavior: { position: { x: 30, y: 0, z: 25 } } },
-        { id: '5', username: 'Agent 06', displayName: 'Agent 06', status: 'updating', gameId: '789012', stats: { actions: 5, playTime: 2700 }, behavior: { position: { x: 15, y: 0, z: 12 } } },
-        { id: '6', username: 'Agent 07', displayName: 'Agent 07', status: 'online', gameId: '345678', stats: { actions: 9, playTime: 7200 }, behavior: { position: { x: 40, y: 0, z: 35 } } },
-        { id: '7', username: 'Agent 08', displayName: 'Agent 08', status: 'online', gameId: '345678', stats: { actions: 4, playTime: 3600 }, behavior: { position: { x: 25, y: 0, z: 20 } } },
-        { id: '8', username: 'Agent 09', displayName: 'Agent 09', status: 'offline', gameId: '901234', stats: { actions: 0, playTime: 0 }, behavior: { position: { x: 0, y: 0, z: 0 } } }
-    ];
-    renderBotsGrid(bots);
+function renderEmptyGrid() {
+    const grid = document.getElementById('agentsGrid');
+    if (grid) {
+        grid.innerHTML = '<div class="empty-state">No agents created yet. Click "Create New Bot" to get started.</div>';
+    }
 }
 
 function renderBotsGrid(botsList) {
@@ -216,19 +163,17 @@ function createAgentCard(bot) {
     const status = getBotStatus(bot);
     const progress = Math.min(100, (bot.stats?.actions || 0) % 100);
     const playTime = formatTime(bot.stats?.playTime || 0);
-    const position = bot.behavior?.position || { x: 0, y: 0, z: 0 };
     
     return `
         <div class="agent-card" data-agent-id="${bot.id}" data-agent-name="${bot.displayName || bot.username}">
             <div class="agent-header">
-                <span class="agent-name">${bot.displayName || bot.username}</span>
+                <span class="agent-name">${escapeHtml(bot.displayName || bot.username)}</span>
                 <span class="status-badge ${status.class}">${status.text}</span>
             </div>
             <div class="agent-details">
-                <p>Game ID: ${bot.gameId}</p>
+                <p>Game ID: ${escapeHtml(bot.gameId)}</p>
                 <p>Tasks: ${bot.stats?.actions || 0}</p>
                 <p>Play Time: ${playTime}</p>
-                <p>Position: (${position.x.toFixed(1)}, ${position.z.toFixed(1)})</p>
             </div>
             <div class="agent-progress">
                 <div class="agent-progress-bar" style="width: ${progress}%"></div>
@@ -245,7 +190,7 @@ function createAgentCard(bot) {
 function getBotStatus(bot) {
     if (bot.status === 'online') return { class: 'online', text: 'Online' };
     if (bot.status === 'offline') return { class: 'offline', text: 'Offline' };
-    if (bot.status === 'reconnecting') return { class: 'updating', text: 'Updating' };
+    if (bot.status === 'reconnecting') return { class: 'idle', text: 'Reconnecting' };
     if (bot.stats?.errors > 5) return { class: 'error', text: 'Error' };
     return { class: 'idle', text: 'Idle' };
 }
@@ -277,7 +222,7 @@ async function createBot() {
     }
     
     try {
-        const response = await fetch(`${API_BASE}/api/bots/create`, {
+        const response = await fetch('/api/bots/create', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -304,30 +249,13 @@ async function createBot() {
             addActivityLog('System', `Failed to create bot: ${data.error}`, 'red');
         }
     } catch (error) {
-        // Demo mode - simulate bot creation
-        addActivityLog('System', `Bot agent "${username}" created (DEMO MODE)`, 'green');
-        
-        const newBot = {
-            id: Date.now().toString(),
-            username,
-            displayName: username,
-            status: 'online',
-            gameId,
-            stats: { actions: 0, playTime: 0 },
-            behavior: { position: { x: 0, y: 0, z: 0 } }
-        };
-        bots.unshift(newBot);
-        renderBotsGrid(bots);
-        
-        const modal = document.getElementById('createBotModal');
-        if (modal) modal.style.display = 'none';
-        document.getElementById('createBotForm')?.reset();
+        addActivityLog('System', `Error creating bot: ${error.message}`, 'red');
     }
 }
 
 async function startBot(botId) {
     try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}/start`, {
+        const response = await fetch(`/api/bots/${botId}/start`, {
             method: 'POST',
             headers: getHeaders()
         });
@@ -337,19 +265,13 @@ async function startBot(botId) {
             fetchBots();
         }
     } catch (error) {
-        // Demo mode
-        const bot = bots.find(b => b.id === botId);
-        if (bot) {
-            bot.status = 'online';
-            renderBotsGrid(bots);
-            addActivityLog(bot.username, 'Bot started (DEMO MODE)', 'green');
-        }
+        addActivityLog(`Bot`, `Failed to start bot`, 'red');
     }
 }
 
 async function stopBot(botId) {
     try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}/stop`, {
+        const response = await fetch(`/api/bots/${botId}/stop`, {
             method: 'POST',
             headers: getHeaders()
         });
@@ -359,13 +281,7 @@ async function stopBot(botId) {
             fetchBots();
         }
     } catch (error) {
-        // Demo mode
-        const bot = bots.find(b => b.id === botId);
-        if (bot) {
-            bot.status = 'offline';
-            renderBotsGrid(bots);
-            addActivityLog(bot.username, 'Bot stopped (DEMO MODE)', 'yellow');
-        }
+        addActivityLog(`Bot`, `Failed to stop bot`, 'red');
     }
 }
 
@@ -373,7 +289,7 @@ async function removeBot(botId) {
     if (!confirm('Are you sure you want to remove this bot agent?')) return;
     
     try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}`, {
+        const response = await fetch(`/api/bots/${botId}`, {
             method: 'DELETE',
             headers: getHeaders()
         });
@@ -383,14 +299,7 @@ async function removeBot(botId) {
             fetchBots();
         }
     } catch (error) {
-        // Demo mode
-        const bot = bots.find(b => b.id === botId);
-        if (bot) {
-            const index = bots.findIndex(b => b.id === botId);
-            if (index > -1) bots.splice(index, 1);
-            renderBotsGrid(bots);
-            addActivityLog(bot.username, 'Bot agent removed (DEMO MODE)', 'gray');
-        }
+        addActivityLog(`Bot`, `Failed to remove bot`, 'red');
     }
 }
 
@@ -407,8 +316,7 @@ function addActivityLog(agent, action, color) {
         agent,
         action,
         color,
-        timestamp: new Date(),
-        timeAgo: 'just now'
+        timestamp: new Date()
     };
     
     activityEntries.unshift(entry);
@@ -463,31 +371,42 @@ function showAlerts() {
     `).join('');
 }
 
+function startUptimeCounter() {
+    setInterval(() => {
+        const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+        const hours = Math.floor(uptimeSeconds / 3600);
+        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+        const uptimeElement = document.getElementById('systemUptime');
+        if (uptimeElement) {
+            uptimeElement.textContent = `${hours}h ${minutes}m`;
+        }
+    }, 60000);
+}
+
 function startActivitySimulation() {
     setInterval(() => {
-        if (bots.length > 0 && Math.random() > 0.7) {
+        if (bots.length > 0 && Math.random() > 0.8) {
             const randomBot = bots[Math.floor(Math.random() * bots.length)];
             const actions = [
-                'Task completed successfully',
+                'Task completed',
                 'Joined game server',
-                'Moved to new location',
-                'Sent chat message',
-                'Interacted with object',
+                'Moved to location',
+                'Sent message',
                 'Collected reward'
             ];
             const randomAction = actions[Math.floor(Math.random() * actions.length)];
             addActivityLog(randomBot.displayName || randomBot.username, randomAction, 'green');
             updateNotificationBadge();
         }
-    }, 30000);
+    }, 45000);
 }
 
 function updateNotificationBadge() {
     const badge = document.getElementById('notificationBadge');
     if (badge) {
         const newActivities = activityEntries.filter(e => {
-            const timeAgo = getTimeAgo(e.timestamp);
-            return timeAgo.includes('secs') || timeAgo.includes('just now');
+            const seconds = Math.floor((new Date() - e.timestamp) / 1000);
+            return seconds < 60;
         }).length;
         badge.textContent = newActivities > 0 ? newActivities : '0';
     }
@@ -521,9 +440,6 @@ function switchPage(page) {
     
     switch(page) {
         case 'dashboard':
-            if (statsGrid) statsGrid.style.display = 'grid';
-            if (agentsGrid) agentsGrid.style.display = 'grid';
-            break;
         case 'agents':
             if (statsGrid) statsGrid.style.display = 'grid';
             if (agentsGrid) agentsGrid.style.display = 'grid';
@@ -532,7 +448,7 @@ function switchPage(page) {
             showRecentLogs();
             break;
         case 'settings':
-            alert('Settings panel coming soon!');
+            alert('Settings panel coming soon');
             break;
     }
 }
