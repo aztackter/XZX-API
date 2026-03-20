@@ -10,7 +10,7 @@ try {
     });
     
     socket.on('connect_error', () => {
-        console.log('WebSocket connection failed');
+        console.log('WebSocket connection failed, using REST API only');
     });
     
     socket.on('botCreated', (bot) => {
@@ -27,6 +27,7 @@ try {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing...');
     setupEventListeners();
     fetchStats();
     fetchBots();
@@ -36,20 +37,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupEventListeners() {
     const createBtn = document.getElementById('createBotBtn');
+    const modal = document.getElementById('createBotModal');
+    const closeBtn = document.querySelector('.close-modal');
+    const form = document.getElementById('createBotForm');
+    
     if (createBtn) {
-        createBtn.addEventListener('click', () => {
-            document.getElementById('createBotModal').style.display = 'flex';
+        createBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('Create button clicked');
+            if (modal) {
+                modal.style.display = 'flex';
+            }
         });
     }
     
-    const closeBtn = document.querySelector('.close-modal');
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
-            document.getElementById('createBotModal').style.display = 'none';
+            if (modal) modal.style.display = 'none';
         });
     }
     
-    const modal = document.getElementById('createBotModal');
     if (modal) {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
@@ -58,10 +65,10 @@ function setupEventListeners() {
         });
     }
     
-    const form = document.getElementById('createBotForm');
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            console.log('Form submitted');
             await createBot();
         });
     }
@@ -165,7 +172,7 @@ function createAgentCard(bot) {
     const playTime = formatTime(bot.stats?.playTime || 0);
     
     return `
-        <div class="agent-card" data-agent-id="${bot.id}" data-agent-name="${bot.displayName || bot.username}">
+        <div class="agent-card" data-agent-id="${bot.id}" data-agent-name="${escapeHtml(bot.displayName || bot.username)}">
             <div class="agent-header">
                 <span class="agent-name">${escapeHtml(bot.displayName || bot.username)}</span>
                 <span class="status-badge ${status.class}">${status.text}</span>
@@ -221,6 +228,8 @@ async function createBot() {
         return;
     }
     
+    const modal = document.getElementById('createBotModal');
+    
     try {
         const response = await fetch('/api/bots/create', {
             method: 'POST',
@@ -239,7 +248,6 @@ async function createBot() {
         const data = await response.json();
         
         if (data.success) {
-            const modal = document.getElementById('createBotModal');
             if (modal) modal.style.display = 'none';
             document.getElementById('createBotForm')?.reset();
             addActivityLog('System', `Bot agent "${username}" created successfully`, 'green');
@@ -247,9 +255,12 @@ async function createBot() {
             updateNotificationBadge();
         } else {
             addActivityLog('System', `Failed to create bot: ${data.error}`, 'red');
+            alert(`Failed to create bot: ${data.error}`);
         }
     } catch (error) {
+        console.error('Create bot error:', error);
         addActivityLog('System', `Error creating bot: ${error.message}`, 'red');
+        alert(`Error creating bot: ${error.message}`);
     }
 }
 
@@ -263,6 +274,8 @@ async function startBot(botId) {
         if (data.success) {
             addActivityLog(`Bot ${botId}`, 'Bot started successfully', 'green');
             fetchBots();
+        } else {
+            addActivityLog(`Bot`, `Failed to start bot: ${data.message}`, 'red');
         }
     } catch (error) {
         addActivityLog(`Bot`, `Failed to start bot`, 'red');
