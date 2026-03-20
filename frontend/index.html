@@ -83,7 +83,7 @@
                         <span class="material-icons">schedule</span>
                         System Uptime
                     </div>
-                    <div class="stat-value" id="systemUptime">0%</div>
+                    <div class="stat-value" id="systemUptime">0h 0m</div>
                     <div class="stat-status operational">Operational</div>
                 </div>
             </div>
@@ -99,7 +99,9 @@
                 </button>
             </div>
 
-            <div class="agents-grid" id="agentsGrid"></div>
+            <div class="agents-grid" id="agentsGrid">
+                <div class="empty-state">No agents created yet. Click "Create New Bot" to get started.</div>
+            </div>
         </main>
 
         <aside class="activity-panel">
@@ -110,12 +112,14 @@
                     <button class="tab" data-tab="alerts">Alerts</button>
                 </div>
             </div>
-            <div class="activity-log" id="activityLog"></div>
+            <div class="activity-log" id="activityLog">
+                <div class="empty-state">No activity logs yet</div>
+            </div>
         </aside>
     </div>
 </div>
 
-<div id="createBotModal" class="modal">
+<div id="createBotModal" class="modal" style="display: none;">
     <div class="modal-content">
         <div class="modal-header">
             <h2>Create New Bot Agent</h2>
