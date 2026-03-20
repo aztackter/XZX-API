@@ -5,7 +5,6 @@ let startTime = Date.now();
 let socket = null;
 try {
     socket = io({
-        auth: { token: localStorage.getItem('authToken') || 'demo-token' },
         autoConnect: true
     });
     
@@ -20,7 +19,7 @@ try {
     
     socket.on('botUpdate', () => fetchBots());
     socket.on('botError', (error) => {
-        addActivityLog(error.botId || 'System', `Error: ${error.error}`, 'red');
+        addActivityLog(error.username || error.botId || 'System', `Error: ${error.error}`, 'red');
     });
 } catch (e) {
     console.log('Socket.IO not available');
@@ -105,9 +104,7 @@ function setupEventListeners() {
 
 async function fetchStats() {
     try {
-        const response = await fetch('/api/stats', {
-            headers: getHeaders()
-        });
+        const response = await fetch('/api/stats');
         if (response.ok) {
             const stats = await response.json();
             document.getElementById('activeSessions').textContent = stats.activeBots || 0;
@@ -121,9 +118,7 @@ async function fetchStats() {
 
 async function fetchBots() {
     try {
-        const response = await fetch('/api/bots', {
-            headers: getHeaders()
-        });
+        const response = await fetch('/api/bots');
         if (response.ok) {
             const data = await response.json();
             bots = data.bots || [];
@@ -229,18 +224,23 @@ async function createBot() {
     }
     
     const modal = document.getElementById('createBotModal');
+    const submitBtn = document.querySelector('#createBotForm .submit-btn');
+    
+    if (submitBtn) {
+        submitBtn.textContent = 'Creating...';
+        submitBtn.disabled = true;
+    }
     
     try {
         const response = await fetch('/api/bots/create', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                ...getHeaders()
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                username,
+                username: username.trim(),
                 password,
-                gameId,
+                gameId: gameId.trim(),
                 options: { humanLikeBehavior: humanLike, autoReconnect }
             })
         });
@@ -250,17 +250,48 @@ async function createBot() {
         if (data.success) {
             if (modal) modal.style.display = 'none';
             document.getElementById('createBotForm')?.reset();
-            addActivityLog('System', `Bot agent "${username}" created successfully`, 'green');
+            addActivityLog('System', `Bot agent "${username}" created successfully!`, 'green');
             fetchBots();
             updateNotificationBadge();
+            alert(`✅ Bot "${username}" created successfully!`);
         } else {
-            addActivityLog('System', `Failed to create bot: ${data.error}`, 'red');
-            alert(`Failed to create bot: ${data.error}`);
+            let errorMsg = data.error;
+            let detailedMsg = '';
+            
+            if (errorMsg.includes('credentials')) {
+                detailedMsg = '\n\n🔐 ROBLOX LOGIN ISSUES:\n' +
+                    '1. Check username and password are correct\n' +
+                    '2. Account must NOT have 2FA (Two-Factor Authentication) enabled\n' +
+                    '3. Account email must be verified\n' +
+                    '4. Try logging into Roblox website first to verify the account\n' +
+                    '5. If account is new, complete the email verification\n' +
+                    '6. Make sure the account is not locked or banned';
+            } else if (errorMsg.includes('captcha')) {
+                detailedMsg = '\n\n🤖 CAPTCHA REQUIRED:\n' +
+                    'Roblox is requiring captcha verification.\n' +
+                    'Please log into Roblox website first to complete the verification.';
+            } else if (errorMsg.includes('2FA')) {
+                detailedMsg = '\n\n⚠️ 2FA ENABLED:\n' +
+                    'This account has Two-Factor Authentication enabled.\n' +
+                    'Bot accounts cannot have 2FA. Please create a new account without 2FA.';
+            } else if (errorMsg.includes('banned')) {
+                detailedMsg = '\n\n🚫 ACCOUNT BANNED:\n' +
+                    'This Roblox account is banned or locked.\n' +
+                    'Please use a different account.';
+            }
+            
+            addActivityLog('System', `Failed to create bot: ${errorMsg}`, 'red');
+            alert(`❌ Failed to create bot: ${errorMsg}${detailedMsg}`);
         }
     } catch (error) {
         console.error('Create bot error:', error);
         addActivityLog('System', `Error creating bot: ${error.message}`, 'red');
-        alert(`Error creating bot: ${error.message}`);
+        alert(`❌ Network error: ${error.message}\n\nMake sure the server is running.`);
+    } finally {
+        if (submitBtn) {
+            submitBtn.textContent = 'Create Agent';
+            submitBtn.disabled = false;
+        }
     }
 }
 
@@ -268,14 +299,14 @@ async function startBot(botId) {
     try {
         const response = await fetch(`/api/bots/${botId}/start`, {
             method: 'POST',
-            headers: getHeaders()
+            headers: { 'Content-Type': 'application/json' }
         });
         const data = await response.json();
         if (data.success) {
-            addActivityLog(`Bot ${botId}`, 'Bot started successfully', 'green');
+            addActivityLog(`Bot`, 'Bot started successfully', 'green');
             fetchBots();
         } else {
-            addActivityLog(`Bot`, `Failed to start bot: ${data.message}`, 'red');
+            addActivityLog(`Bot`, `Failed to start: ${data.message}`, 'red');
         }
     } catch (error) {
         addActivityLog(`Bot`, `Failed to start bot`, 'red');
@@ -286,11 +317,11 @@ async function stopBot(botId) {
     try {
         const response = await fetch(`/api/bots/${botId}/stop`, {
             method: 'POST',
-            headers: getHeaders()
+            headers: { 'Content-Type': 'application/json' }
         });
         const data = await response.json();
         if (data.success) {
-            addActivityLog(`Bot ${botId}`, 'Bot stopped', 'yellow');
+            addActivityLog(`Bot`, 'Bot stopped', 'yellow');
             fetchBots();
         }
     } catch (error) {
@@ -304,11 +335,11 @@ async function removeBot(botId) {
     try {
         const response = await fetch(`/api/bots/${botId}`, {
             method: 'DELETE',
-            headers: getHeaders()
+            headers: { 'Content-Type': 'application/json' }
         });
         const data = await response.json();
         if (data.success) {
-            addActivityLog(`Bot ${botId}`, 'Bot agent removed from system', 'gray');
+            addActivityLog(`Bot`, 'Bot agent removed from system', 'gray');
             fetchBots();
         }
     } catch (error) {
@@ -317,11 +348,7 @@ async function removeBot(botId) {
 }
 
 function getHeaders() {
-    const token = localStorage.getItem('authToken') || 'demo-token';
-    return {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-    };
+    return { 'Content-Type': 'application/json' };
 }
 
 function addActivityLog(agent, action, color) {
