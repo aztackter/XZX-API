@@ -1,12 +1,12 @@
 FROM node:18-alpine
 WORKDIR /app
 
-# Copy root package files
+# Copy package files
 COPY package*.json ./
 COPY backend/package*.json ./backend/
 
-# Install ALL dependencies at once from root
-RUN npm install --only=production
+# Install ALL dependencies from the root (this will handle both root and backend)
+RUN npm install
 
 # Copy the rest of the application
 COPY . .
