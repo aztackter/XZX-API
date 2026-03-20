@@ -1,6 +1,10 @@
 {
   "name": "roblox-bot-system",
   "version": "1.0.0",
+  "engines": {
+    "node": "20.x",
+    "npm": "10.x"
+  },
   "scripts": {
     "start": "cd backend && npm install && node src/server.js",
     "build": "cd backend && npm install"
