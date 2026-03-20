@@ -6,8 +6,6 @@ const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const session = require('express-session');
-const bcrypt = require('bcrypt');
-const os = require('os');
 const BotManager = require('./botManager');
 require('dotenv').config();
 
@@ -15,7 +13,7 @@ const app = express();
 const server = http.createServer(app);
 const botManager = new BotManager();
 
-// SIMPLE HEALTH CHECK - MUST BE FIRST
+// Simple health check
 app.get('/health', (req, res) => {
     return res.status(200).send('OK');
 });
@@ -23,14 +21,6 @@ app.get('/health', (req, res) => {
 app.get('/ping', (req, res) => {
     return res.status(200).send('pong');
 });
-
-// Get client IP for logging
-const getClientIp = (req) => {
-    return req.headers['x-forwarded-for'] || 
-           req.connection.remoteAddress || 
-           req.socket.remoteAddress || 
-           'unknown';
-};
 
 // Security middleware
 app.use(helmet({
@@ -46,12 +36,10 @@ app.use(helmet({
 }));
 
 // CORS configuration
-const corsOptions = {
-    origin: process.env.FRONTEND_URL || "*",
-    credentials: true,
-    optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
+app.use(cors({
+    origin: "*",
+    credentials: true
+}));
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -60,7 +48,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static files
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
-// Session configuration
+// Session configuration (optional)
 app.use(session({
     secret: process.env.SESSION_SECRET || 'development-secret-key',
     resave: false,
@@ -78,76 +66,29 @@ app.use(session({
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
-    message: { error: 'Too many requests, please try again later.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req) => {
-        return req.headers['x-forwarded-for'] || req.ip || 'unknown';
-    }
+    message: { error: 'Too many requests, please try again later.' }
 });
 app.use('/api/', limiter);
 
 // Request logging middleware
 app.use((req, res, next) => {
-    const clientIp = getClientIp(req);
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - IP: ${clientIp}`);
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
     next();
 });
 
-// Authentication middleware
-const authenticate = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
-    const sessionToken = req.session?.token;
-    
-    if (!token && !sessionToken) {
-        return res.status(401).json({ error: 'No authentication token provided' });
-    }
-    
-    const validToken = token || sessionToken;
-    if (validToken !== process.env.API_TOKEN) {
-        return res.status(403).json({ error: 'Invalid authentication token' });
-    }
-    
-    next();
-};
+// ============ API ROUTES (NO AUTHENTICATION REQUIRED) ============
 
-// Root endpoint - serve frontend or API info
-app.get('/', (req, res) => {
-    if (req.headers.accept && req.headers.accept.includes('application/json')) {
-        res.json({
-            name: 'Roblox Bot Control Panel API',
-            version: '1.0.0',
-            status: 'running',
-            endpoints: {
-                health: '/health',
-                ping: '/ping',
-                api: '/api/*'
-            }
-        });
-    } else {
-        res.sendFile(path.join(__dirname, '../../frontend/index.html'));
-    }
-});
-
-// API Routes
-app.get('/api/stats', authenticate, (req, res) => {
+app.get('/api/stats', (req, res) => {
     try {
         const stats = botManager.getStats();
-        res.json({
-            success: true,
-            ...stats
-        });
+        res.json(stats);
     } catch (error) {
         console.error('Error fetching stats:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to fetch stats' 
-        });
+        res.status(500).json({ error: 'Failed to fetch stats' });
     }
 });
 
-app.get('/api/bots', authenticate, (req, res) => {
+app.get('/api/bots', (req, res) => {
     try {
         const bots = botManager.getBots();
         res.json({
@@ -157,14 +98,11 @@ app.get('/api/bots', authenticate, (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching bots:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to fetch bots' 
-        });
+        res.status(500).json({ error: 'Failed to fetch bots' });
     }
 });
 
-app.post('/api/bots/create', authenticate, async (req, res) => {
+app.post('/api/bots/create', async (req, res) => {
     try {
         const { username, password, gameId, options = {} } = req.body;
         
@@ -184,7 +122,7 @@ app.post('/api/bots/create', authenticate, async (req, res) => {
         
         const bot = await botManager.createBot(username, password, gameId, options);
         
-        console.log(`Bot created successfully: ${username} (Game: ${gameId}) at ${new Date().toISOString()}`);
+        console.log(`Bot created successfully: ${username} (Game: ${gameId})`);
         
         res.json({ 
             success: true, 
@@ -210,19 +148,18 @@ app.post('/api/bots/create', authenticate, async (req, res) => {
         
         res.status(statusCode).json({ 
             success: false, 
-            error: errorMessage,
-            code: error.code || 'UNKNOWN_ERROR'
+            error: errorMessage
         });
     }
 });
 
-app.post('/api/bots/:botId/start', authenticate, (req, res) => {
+app.post('/api/bots/:botId/start', async (req, res) => {
     try {
         const { botId } = req.params;
-        const success = botManager.startBot(botId);
+        const success = await botManager.startBot(botId);
         
         if (success) {
-            console.log(`Bot started: ${botId} at ${new Date().toISOString()}`);
+            console.log(`Bot started: ${botId}`);
             res.json({ 
                 success: true, 
                 message: 'Bot started successfully' 
@@ -242,13 +179,13 @@ app.post('/api/bots/:botId/start', authenticate, (req, res) => {
     }
 });
 
-app.post('/api/bots/:botId/stop', authenticate, (req, res) => {
+app.post('/api/bots/:botId/stop', async (req, res) => {
     try {
         const { botId } = req.params;
-        const success = botManager.stopBot(botId);
+        const success = await botManager.stopBot(botId);
         
         if (success) {
-            console.log(`Bot stopped: ${botId} at ${new Date().toISOString()}`);
+            console.log(`Bot stopped: ${botId}`);
             res.json({ 
                 success: true, 
                 message: 'Bot stopped successfully' 
@@ -268,13 +205,13 @@ app.post('/api/bots/:botId/stop', authenticate, (req, res) => {
     }
 });
 
-app.delete('/api/bots/:botId', authenticate, (req, res) => {
+app.delete('/api/bots/:botId', async (req, res) => {
     try {
         const { botId } = req.params;
-        const success = botManager.removeBot(botId);
+        const success = await botManager.removeBot(botId);
         
         if (success) {
-            console.log(`Bot removed: ${botId} at ${new Date().toISOString()}`);
+            console.log(`Bot removed: ${botId}`);
             res.json({ 
                 success: true, 
                 message: 'Bot removed successfully' 
@@ -294,7 +231,7 @@ app.delete('/api/bots/:botId', authenticate, (req, res) => {
     }
 });
 
-app.get('/api/bots/:botId/activity', authenticate, (req, res) => {
+app.get('/api/bots/:botId/activity', async (req, res) => {
     try {
         const { botId } = req.params;
         const activity = botManager.getBotActivity(botId);
@@ -313,84 +250,15 @@ app.get('/api/bots/:botId/activity', authenticate, (req, res) => {
     }
 });
 
-// Admin authentication routes
-app.post('/api/admin/login', (req, res) => {
-    try {
-        const { username, password } = req.body;
-        
-        if (!username || !password) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Username and password required' 
-            });
-        }
-        
-        if (username === process.env.ADMIN_USERNAME && 
-            password === process.env.ADMIN_PASSWORD) {
-            
-            req.session.regenerate((err) => {
-                if (err) {
-                    console.error('Session regeneration error:', err);
-                    return res.status(500).json({ 
-                        success: false, 
-                        error: 'Login failed' 
-                    });
-                }
-                
-                req.session.token = process.env.API_TOKEN;
-                req.session.username = username;
-                
-                res.json({ 
-                    success: true, 
-                    message: 'Logged in successfully',
-                    user: { username }
-                });
-            });
-        } else {
-            res.status(401).json({ 
-                success: false, 
-                error: 'Invalid credentials' 
-            });
-        }
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Login failed' 
-        });
-    }
-});
-
-app.post('/api/admin/logout', (req, res) => {
-    req.session.destroy((err) => {
-        if (err) {
-            console.error('Logout error:', err);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Logout failed' 
-            });
-        }
-        
-        res.clearCookie('roblox-bot.sid');
-        res.json({ 
-            success: true, 
-            message: 'Logged out successfully' 
-        });
-    });
-});
-
-app.get('/api/admin/verify', authenticate, (req, res) => {
-    res.json({ 
-        success: true, 
-        authenticated: true,
-        user: { username: req.session.username || 'admin' }
-    });
+// Root endpoint
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../frontend/index.html'));
 });
 
 // Socket.IO setup
 const io = socketIO(server, {
     cors: {
-        origin: process.env.FRONTEND_URL || "*",
+        origin: "*",
         methods: ["GET", "POST"],
         credentials: true
     },
@@ -398,21 +266,9 @@ const io = socketIO(server, {
     pingInterval: 25000
 });
 
-// Socket.IO authentication middleware
-io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
-    
-    if (token === process.env.API_TOKEN) {
-        next();
-    } else {
-        next(new Error('Authentication error'));
-    }
-});
-
-// Socket.IO connection handler
+// No authentication for Socket.IO
 io.on('connection', (socket) => {
-    const clientIp = socket.handshake.address;
-    console.log(`Socket connected: ${socket.id} from ${clientIp}`);
+    console.log(`Socket connected: ${socket.id}`);
 
     socket.emit('stats', botManager.getStats());
 
@@ -467,85 +323,28 @@ io.on('connection', (socket) => {
         botManager.removeListener('botStarted', botStartedHandler);
         botManager.removeListener('botRemoved', botRemovedHandler);
     });
-
-    socket.on('error', (error) => {
-        console.error(`Socket error for ${socket.id}:`, error);
-    });
 });
 
-// 404 handler for API routes
-app.use('/api/*', (req, res) => {
-    res.status(404).json({ 
-        success: false, 
-        error: 'API endpoint not found' 
-    });
+// 404 handler
+app.use('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../frontend/index.html'));
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err.stack);
-    
-    const message = process.env.NODE_ENV === 'production' 
-        ? 'Internal server error' 
-        : err.message;
-    
+    console.error('Server error:', err.stack);
     res.status(500).json({ 
-        success: false, 
-        error: message,
-        ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+        error: 'Something went wrong!'
     });
 });
 
-// Catch-all route to serve frontend
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../frontend/index.html'));
-});
-
-// Graceful shutdown handler
-const gracefulShutdown = () => {
-    console.log('Received shutdown signal, cleaning up...');
-    
-    const bots = botManager.getBots();
-    bots.forEach(bot => {
-        botManager.stopBot(bot.id);
-    });
-    
-    server.close(() => {
-        console.log('Server closed');
-        process.exit(0);
-    });
-    
-    setTimeout(() => {
-        console.error('Could not close connections in time, forcefully shutting down');
-        process.exit(1);
-    }, 10000);
-};
-
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
-
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    gracefulShutdown();
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-// Start server with IPv6 support
+// Start server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '::', () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log('='.repeat(50));
     console.log('🚀 Roblox Bot Control Panel');
     console.log('='.repeat(50));
-    console.log(`Server running on port: ${PORT} (IPv4 & IPv6)`);
+    console.log(`Server running on port: ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`Frontend serving from: ${path.join(__dirname, '../../frontend')}`);
-    console.log(`Health check: http://localhost:${PORT}/health`);
-    console.log(`Ping test: http://localhost:${PORT}/ping`);
     console.log('='.repeat(50));
-    
-    console.log('\n⚠️  Note: Using MemoryStore for sessions (not recommended for production)');
-    console.log('   Consider adding MongoDB for production use\n');
 });
