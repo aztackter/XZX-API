@@ -3,14 +3,14 @@ const EventEmitter = require('events');
 const crypto = require('crypto');
 const HttpsProxyAgent = require('https-proxy-agent');
 const { RateLimiter } = require('limiter');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 
 class BotManager extends EventEmitter {
     constructor() {
         super();
         this.bots = new Map();
         this.proxies = [];
+        this.pool = null;
         this.stats = {
             totalBots: 0,
             activeBots: 0,
@@ -23,16 +23,8 @@ class BotManager extends EventEmitter {
             tokensPerInterval: 10,
             interval: 'second'
         });
-        
-        // Setup data directory
-        this.dataDir = path.join(__dirname, 'data');
-        if (!fs.existsSync(this.dataDir)) {
-            fs.mkdirSync(this.dataDir, { recursive: true });
-        }
-        this.botsFile = path.join(this.dataDir, 'bots.json');
-        
         this.loadProxies();
-        this.loadBotsFromFile();
+        this.initDatabase();
     }
 
     loadProxies() {
@@ -61,59 +53,158 @@ class BotManager extends EventEmitter {
         }
     }
 
-    loadBotsFromFile() {
+    async initDatabase() {
+        if (!process.env.DATABASE_URL) {
+            console.log('No DATABASE_URL found, bots will not persist across restarts');
+            return;
+        }
+
         try {
-            if (fs.existsSync(this.botsFile)) {
-                const data = JSON.parse(fs.readFileSync(this.botsFile, 'utf8'));
-                for (const bot of data) {
-                    this.bots.set(bot.id, bot);
-                    this.stats.totalBots++;
-                    if (bot.status === 'online') {
-                        this.stats.activeBots++;
-                    }
-                    this.stats.totalRequests += bot.stats?.requests || 0;
-                    this.stats.errors += bot.stats?.errors || 0;
-                    this.stats.totalPlayTime += bot.stats?.playTime || 0;
-                }
-                console.log(`Loaded ${data.length} saved bots from storage`);
-            }
+            this.pool = new Pool({
+                connectionString: process.env.DATABASE_URL,
+                ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+            });
+
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS bots (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    display_name TEXT,
+                    game_id TEXT NOT NULL,
+                    status TEXT DEFAULT 'offline',
+                    stats JSONB DEFAULT '{"actions":0,"playTime":0,"errors":0,"requests":0}',
+                    behavior JSONB DEFAULT '{"position":{"x":0,"y":0,"z":0},"currentServer":null,"pathHistory":[]}',
+                    settings JSONB DEFAULT '{"actionInterval":8000,"randomDelay":true,"humanLikeBehavior":true,"autoReconnect":true}',
+                    proxy TEXT,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    last_active TIMESTAMP DEFAULT NOW()
+                )
+            `);
+
+            await this.pool.query(`
+                CREATE INDEX IF NOT EXISTS idx_bots_status ON bots(status);
+                CREATE INDEX IF NOT EXISTS idx_bots_created_at ON bots(created_at);
+            `);
+
+            console.log('Database initialized successfully');
+            await this.loadSavedBots();
         } catch (error) {
-            console.error('Failed to load bots from file:', error);
+            console.error('Database initialization failed:', error.message);
         }
     }
 
-    saveBotsToFile() {
+    async loadSavedBots() {
+        if (!this.pool) return;
+
         try {
-            const botsArray = Array.from(this.bots.values()).map(bot => ({
-                id: bot.id,
-                username: bot.username,
-                displayName: bot.displayName,
-                userId: bot.userId,
-                gameId: bot.gameId,
-                status: bot.status,
-                createdAt: bot.createdAt,
-                lastActive: bot.lastActive,
-                stats: bot.stats,
-                behavior: bot.behavior,
-                settings: bot.settings,
-                proxy: bot.proxy
-            }));
-            fs.writeFileSync(this.botsFile, JSON.stringify(botsArray, null, 2));
+            const result = await this.pool.query('SELECT * FROM bots ORDER BY created_at DESC');
+            
+            for (const row of result.rows) {
+                const bot = {
+                    id: row.id,
+                    username: row.username,
+                    displayName: row.display_name || row.username,
+                    gameId: row.game_id,
+                    status: row.status,
+                    stats: row.stats,
+                    behavior: row.behavior,
+                    settings: row.settings,
+                    proxy: row.proxy,
+                    createdAt: new Date(row.created_at),
+                    lastActive: new Date(row.last_active),
+                    activityLog: [],
+                    security: {
+                        cookie: null,
+                        lastLogin: null,
+                        loginAttempts: 0,
+                        banned: false
+                    }
+                };
+                
+                this.bots.set(bot.id, bot);
+                this.stats.totalBots++;
+                if (bot.status === 'online') this.stats.activeBots++;
+                this.stats.totalPlayTime += bot.stats.playTime || 0;
+            }
+            
+            console.log(`Loaded ${result.rows.length} saved bots from database`);
+            this.emit('botsLoaded', result.rows.length);
         } catch (error) {
-            console.error('Failed to save bots to file:', error);
+            console.error('Failed to load bots from database:', error.message);
+        }
+    }
+
+    async saveBotToDatabase(bot) {
+        if (!this.pool) return;
+
+        try {
+            await this.pool.query(`
+                INSERT INTO bots (id, username, display_name, game_id, status, stats, behavior, settings, proxy, last_active)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    display_name = EXCLUDED.display_name,
+                    game_id = EXCLUDED.game_id,
+                    status = EXCLUDED.status,
+                    stats = EXCLUDED.stats,
+                    behavior = EXCLUDED.behavior,
+                    settings = EXCLUDED.settings,
+                    proxy = EXCLUDED.proxy,
+                    last_active = NOW()
+            `, [
+                bot.id,
+                bot.username,
+                bot.displayName || bot.username,
+                bot.gameId,
+                bot.status,
+                bot.stats,
+                bot.behavior,
+                bot.settings,
+                bot.proxy || null
+            ]);
+        } catch (error) {
+            console.error('Failed to save bot to database:', error.message);
+        }
+    }
+
+    async deleteBotFromDatabase(botId) {
+        if (!this.pool) return;
+
+        try {
+            await this.pool.query('DELETE FROM bots WHERE id = $1', [botId]);
+        } catch (error) {
+            console.error('Failed to delete bot from database:', error.message);
+        }
+    }
+
+    async updateBotInDatabase(botId, updates) {
+        const bot = this.bots.get(botId);
+        if (bot && this.pool) {
+            Object.assign(bot, updates);
+            await this.saveBotToDatabase(bot);
         }
     }
 
     async createBot(username, password, gameId, options = {}) {
         try {
             await this.rateLimiter.removeTokens(1);
+            
+            // Validate inputs
+            if (!username || !password || !gameId) {
+                throw new Error('Username, password, and gameId are required');
+            }
+            
+            if (!/^\d+$/.test(gameId)) {
+                throw new Error('Game ID must be a number');
+            }
+            
             const botId = `bot_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
             const proxy = options.useProxy ? this.getAvailableProxy() : null;
             
             const bot = {
                 id: botId,
-                username,
-                gameId,
+                username: username.trim(),
+                gameId: gameId.trim(),
                 status: 'initializing',
                 createdAt: new Date(),
                 lastActive: new Date(),
@@ -126,9 +217,9 @@ class BotManager extends EventEmitter {
                 },
                 settings: {
                     actionInterval: options.actionInterval || 8000,
-                    randomDelay: options.randomDelay || true,
-                    humanLikeBehavior: options.humanLikeBehavior || true,
-                    autoReconnect: options.autoReconnect || true
+                    randomDelay: options.randomDelay !== false,
+                    humanLikeBehavior: options.humanLikeBehavior !== false,
+                    autoReconnect: options.autoReconnect !== false
                 },
                 behavior: {
                     lastAction: null,
@@ -146,7 +237,7 @@ class BotManager extends EventEmitter {
             };
 
             const loginOptions = {
-                username: username,
+                username: username.trim(),
                 password: password
             };
             
@@ -154,7 +245,27 @@ class BotManager extends EventEmitter {
                 loginOptions.agent = proxy;
             }
 
-            const user = await noblox.login(loginOptions);
+            console.log(`Attempting to login to Roblox as: ${username}`);
+            
+            let user;
+            try {
+                user = await noblox.login(loginOptions);
+            } catch (loginError) {
+                console.error('Roblox login error:', loginError.message);
+                
+                let errorMsg = 'Invalid Roblox credentials. ';
+                if (loginError.message.includes('invalid')) {
+                    errorMsg += 'Username or password is incorrect.';
+                } else if (loginError.message.includes('captcha')) {
+                    errorMsg += 'Roblox requires captcha verification. Try logging in manually first.';
+                } else if (loginError.message.includes('2FA') || loginError.message.includes('two-step')) {
+                    errorMsg += 'Account has Two-Factor Authentication (2FA) enabled. Bot accounts cannot have 2FA.';
+                } else {
+                    errorMsg += loginError.message;
+                }
+                throw new Error(errorMsg);
+            }
+            
             const csrf = await noblox.getCSRFToken();
             
             bot.security.cookie = user;
@@ -170,31 +281,48 @@ class BotManager extends EventEmitter {
             this.stats.totalBots++;
             this.stats.activeBots++;
             
-            this.saveBotsToFile();
+            await this.saveBotToDatabase(bot);
             
             this.emit('botCreated', this.sanitizeBot(bot));
-            this.logBotActivity(bot.id, 'Bot created and logged in successfully');
+            this.logBotActivity(bot.id, `Bot created and logged in successfully as ${bot.displayName}`);
             this.startBotBehavior(bot.id);
             
             return this.sanitizeBot(bot);
         } catch (error) {
             console.error(`Failed to create bot ${username}:`, error);
-            if (error.message.includes('banned')) {
+            
+            let errorMessage = error.message;
+            let statusCode = 500;
+            
+            if (error.message.includes('credentials')) {
+                statusCode = 401;
+                errorMessage = 'Invalid Roblox credentials. Please check: 1) Username is correct 2) Password is correct 3) Account does NOT have 2FA enabled 4) Account email is verified';
+            } else if (error.message.includes('banned')) {
+                statusCode = 403;
+                errorMessage = 'Roblox account is banned or locked';
                 this.stats.bannedAccounts++;
+            } else if (error.message.includes('captcha')) {
+                statusCode = 429;
+                errorMessage = 'Roblox requires captcha verification. Please log into Roblox website first to verify the account.';
+            } else if (error.message.includes('2FA')) {
+                statusCode = 401;
+                errorMessage = 'Account has Two-Factor Authentication (2FA) enabled. Bot accounts cannot have 2FA enabled.';
             }
+            
             this.emit('botError', {
                 username,
-                error: error.message,
-                timestamp: new Date()
+                error: errorMessage,
+                timestamp: new Date(),
+                statusCode
             });
-            throw error;
+            throw new Error(errorMessage);
         }
     }
 
     sanitizeBot(bot) {
         const sanitized = { ...bot };
         delete sanitized.security;
-        delete sanitized.password;
+        delete sanitized.activityLog;
         return sanitized;
     }
 
@@ -216,13 +344,13 @@ class BotManager extends EventEmitter {
                 const action = await this.performHumanLikeAction(bot);
                 
                 bot.stats.actions++;
-                bot.stats.requests++;
                 bot.lastActive = new Date();
                 bot.stats.playTime += bot.settings.actionInterval / 1000;
-                this.stats.totalRequests++;
                 this.stats.totalPlayTime += bot.settings.actionInterval / 1000;
+                this.stats.totalRequests++;
                 
-                this.saveBotsToFile();
+                await this.saveBotToDatabase(bot);
+                
                 this.emit('botUpdate', this.sanitizeBot(bot));
                 this.logBotActivity(bot.id, `Performed action: ${action.type}`);
                 
@@ -232,10 +360,12 @@ class BotManager extends EventEmitter {
                 console.error(`Bot ${bot.username} error:`, error);
                 this.emit('botError', {
                     botId: bot.id,
+                    username: bot.username,
                     error: error.message,
                     timestamp: new Date()
                 });
-                this.saveBotsToFile();
+                
+                await this.saveBotToDatabase(bot);
 
                 if (bot.settings.autoReconnect && this.shouldReconnect(error)) {
                     await this.reconnectBot(bot.id);
@@ -292,6 +422,7 @@ class BotManager extends EventEmitter {
                 const serverWithPlayers = servers.find(s => s.playing > 5);
                 const targetServer = serverWithPlayers || servers[0];
                 bot.behavior.currentServer = targetServer;
+                await this.saveBotToDatabase(bot);
                 this.logBotActivity(bot.id, `Joined server ${targetServer.id} with ${targetServer.playing} players`);
                 return {
                     type: 'join_server',
@@ -303,6 +434,7 @@ class BotManager extends EventEmitter {
             console.error('Failed to join game server:', error);
             throw error;
         }
+        return { type: 'join_server', server: null };
     }
 
     async moveCharacter(bot) {
@@ -327,6 +459,7 @@ class BotManager extends EventEmitter {
 
         bot.behavior.position = newPosition;
         bot.behavior.lastAction = 'move';
+        await this.saveBotToDatabase(bot);
 
         return {
             type: 'move',
@@ -367,14 +500,12 @@ class BotManager extends EventEmitter {
     async checkGameUpdates(bot) {
         try {
             const gameInfo = await noblox.getGame(bot.gameId);
-            const gameFavorites = await noblox.getGameFavorites(bot.gameId);
             return {
                 type: 'check_updates',
                 gameInfo: {
                     name: gameInfo.Name,
                     playing: gameInfo.Playing,
-                    visits: gameInfo.Visits,
-                    favorites: gameFavorites.count
+                    visits: gameInfo.Visits
                 }
             };
         } catch (error) {
@@ -437,8 +568,8 @@ class BotManager extends EventEmitter {
         try {
             this.logBotActivity(bot.id, 'Attempting to reconnect...');
             bot.status = 'reconnecting';
+            await this.saveBotToDatabase(bot);
             this.emit('botUpdate', this.sanitizeBot(bot));
-            this.saveBotsToFile();
 
             const loginOptions = {
                 username: bot.username,
@@ -454,16 +585,19 @@ class BotManager extends EventEmitter {
             bot.security.lastLogin = new Date();
             bot.status = 'online';
             bot.security.loginAttempts = 0;
+            
+            await this.saveBotToDatabase(bot);
 
-            this.saveBotsToFile();
             this.logBotActivity(bot.id, 'Reconnected successfully');
             this.emit('botUpdate', this.sanitizeBot(bot));
             return true;
         } catch (error) {
             bot.security.loginAttempts++;
+            await this.saveBotToDatabase(bot);
+            
             if (bot.security.loginAttempts >= 3) {
                 bot.status = 'offline';
-                this.saveBotsToFile();
+                await this.saveBotToDatabase(bot);
                 this.logBotActivity(bot.id, 'Failed to reconnect after 3 attempts');
             }
             return false;
@@ -475,9 +609,10 @@ class BotManager extends EventEmitter {
             'ECONNRESET',
             'ETIMEDOUT',
             'socket hang up',
-            'network timeout'
+            'network timeout',
+            'connection reset'
         ];
-        return recoverableErrors.some(e => error.message.includes(e));
+        return recoverableErrors.some(e => error.message?.toLowerCase().includes(e.toLowerCase()));
     }
 
     sleep(ms) {
@@ -502,7 +637,7 @@ class BotManager extends EventEmitter {
         this.emit('botActivity', activity);
     }
 
-    stopBot(botId) {
+    async stopBot(botId) {
         const bot = this.bots.get(botId);
         if (bot) {
             bot.status = 'offline';
@@ -510,7 +645,7 @@ class BotManager extends EventEmitter {
             if (bot.proxy) {
                 this.releaseProxy(bot.proxy);
             }
-            this.saveBotsToFile();
+            await this.saveBotToDatabase(bot);
             this.logBotActivity(botId, 'Bot stopped');
             this.emit('botStopped', this.sanitizeBot(bot));
             return true;
@@ -518,12 +653,12 @@ class BotManager extends EventEmitter {
         return false;
     }
 
-    startBot(botId) {
+    async startBot(botId) {
         const bot = this.bots.get(botId);
-        if (bot && bot.status !== 'online') {
+        if (bot) {
             bot.status = 'online';
             this.stats.activeBots++;
-            this.saveBotsToFile();
+            await this.saveBotToDatabase(bot);
             this.startBotBehavior(botId);
             this.logBotActivity(botId, 'Bot started');
             this.emit('botStarted', this.sanitizeBot(bot));
@@ -532,13 +667,13 @@ class BotManager extends EventEmitter {
         return false;
     }
 
-    removeBot(botId) {
+    async removeBot(botId) {
         const bot = this.bots.get(botId);
         if (bot) {
-            this.stopBot(botId);
+            await this.stopBot(botId);
             this.bots.delete(botId);
             this.stats.totalBots--;
-            this.saveBotsToFile();
+            await this.deleteBotFromDatabase(botId);
             this.logBotActivity(botId, 'Bot removed');
             this.emit('botRemoved', this.sanitizeBot(bot));
             return true;
@@ -564,7 +699,8 @@ class BotManager extends EventEmitter {
             bannedAccounts: this.stats.bannedAccounts,
             totalPlayTime: this.stats.totalPlayTime,
             proxyCount: this.proxies.length,
-            availableProxies: this.proxies.filter(p => !p.inUse).length
+            availableProxies: this.proxies.filter(p => !p.inUse).length,
+            databaseConnected: !!this.pool
         };
     }
 }
