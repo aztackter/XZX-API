@@ -257,4 +257,150 @@ async function removeBot(botId) {
             }
         });
         const data = await response.json();
-        if (data
+        if (data.success) {
+            addActivityLog(`Bot ${botId}`, 'Bot agent removed from system', 'gray');
+            fetchBots();
+        }
+    } catch (error) {
+        addActivityLog(`Bot ${botId}`, `Failed to remove: ${error.message}`, 'red');
+    }
+}
+
+function filterAgents(searchTerm) {
+    const cards = document.querySelectorAll('.agent-card');
+    const term = searchTerm.toLowerCase();
+    
+    cards.forEach(card => {
+        const name = card.querySelector('.agent-name')?.textContent.toLowerCase() || '';
+        if (name.includes(term)) {
+            card.style.display = '';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+let activityEntries = [];
+
+function addActivityLog(agent, action, color) {
+    const entry = {
+        agent,
+        action,
+        color,
+        timestamp: new Date(),
+        timeAgo: 'just now'
+    };
+    
+    activityEntries.unshift(entry);
+    if (activityEntries.length > 50) activityEntries.pop();
+    
+    showRecentLogs();
+}
+
+function showRecentLogs() {
+    const logContainer = document.getElementById('activityLog');
+    
+    if (activityEntries.length === 0) {
+        logContainer.innerHTML = '<div class="empty-state">No activity logs yet</div>';
+        return;
+    }
+    
+    logContainer.innerHTML = activityEntries.map(entry => `
+        <div class="activity-entry">
+            <div class="activity-dot ${entry.color}"></div>
+            <div class="activity-content">
+                <div class="activity-agent">${entry.agent}</div>
+                <div class="activity-action">${entry.action}</div>
+                <div class="activity-time">${getTimeAgo(entry.timestamp)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function showAlerts() {
+    const alerts = activityEntries.filter(e => e.color === 'red' || e.color === 'yellow');
+    const logContainer = document.getElementById('activityLog');
+    
+    if (alerts.length === 0) {
+        logContainer.innerHTML = '<div class="empty-state">No alerts to display</div>';
+        return;
+    }
+    
+    logContainer.innerHTML = alerts.map(entry => `
+        <div class="activity-entry">
+            <div class="activity-dot ${entry.color}"></div>
+            <div class="activity-content">
+                <div class="activity-agent">${entry.agent}</div>
+                <div class="activity-action">${entry.action}</div>
+                <div class="activity-time">${getTimeAgo(entry.timestamp)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function startActivitySimulation() {
+    setInterval(() => {
+        if (Math.random() > 0.7 && bots.length > 0) {
+            const randomBot = bots[Math.floor(Math.random() * bots.length)];
+            const actions = [
+                'Task completed successfully',
+                'Joined game server',
+                'Moved to new location',
+                'Sent chat message',
+                'Interacted with object'
+            ];
+            const randomAction = actions[Math.floor(Math.random() * actions.length)];
+            addActivityLog(randomBot.username || 'Agent', randomAction, 'green');
+        }
+    }, 30000);
+}
+
+function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return `${seconds} secs ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} mins ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hours ago`;
+    return `${Math.floor(hours / 24)} days ago`;
+}
+
+function formatTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+}
+
+function switchPage(page) {
+    switch(page) {
+        case 'dashboard':
+            document.querySelector('.agents-grid').style.display = 'grid';
+            break;
+        case 'agents':
+            document.querySelector('.agents-grid').style.display = 'grid';
+            break;
+        case 'activity':
+            showRecentLogs();
+            break;
+        case 'settings':
+            alert('Settings panel coming soon!');
+            break;
+    }
+}
+
+socket.on('botCreated', (bot) => {
+    addActivityLog(bot.username, 'New bot agent created', 'green');
+    fetchBots();
+});
+
+socket.on('botUpdate', (bot) => {
+    fetchBots();
+});
+
+socket.on('botError', (error) => {
+    addActivityLog(error.botId || 'System', `Error: ${error.error}`, 'red');
+});
+
+socket.on('connect_error', () => {
+    console.log('WebSocket connection failed, using demo mode');
+});
