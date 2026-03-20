@@ -1,0 +1,26 @@
+# render.yaml
+services:
+  - type: web
+    name: roblox-bot-system
+    runtime: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: API_TOKEN
+        generateValue: true
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        value: SecurePass123!
+      - key: MAX_RETRIES
+        value: 3
+      - key: RETRY_DELAY
+        value: 1000
+      - key: LOG_LEVEL
+        value: info
