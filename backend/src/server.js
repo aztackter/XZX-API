@@ -15,6 +15,15 @@ const app = express();
 const server = http.createServer(app);
 const botManager = new BotManager();
 
+// SIMPLE HEALTH CHECK - MUST BE FIRST
+app.get('/health', (req, res) => {
+    return res.status(200).send('OK');
+});
+
+app.get('/ping', (req, res) => {
+    return res.status(200).send('pong');
+});
+
 // Get client IP for logging
 const getClientIp = (req) => {
     return req.headers['x-forwarded-for'] || 
@@ -59,7 +68,7 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        maxAge: 24 * 60 * 60 * 1000,
         sameSite: 'lax'
     },
     name: 'roblox-bot.sid'
@@ -102,28 +111,6 @@ const authenticate = (req, res, next) => {
     
     next();
 };
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-    const stats = botManager.getStats();
-    res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        cpu: os.loadavg(),
-        bots: {
-            total: stats.totalBots,
-            active: stats.activeBots
-        },
-        environment: process.env.NODE_ENV
-    });
-});
-
-// Ping endpoint for basic connectivity
-app.get('/ping', (req, res) => {
-    res.status(200).send('pong');
-});
 
 // Root endpoint - serve frontend or API info
 app.get('/', (req, res) => {
@@ -181,7 +168,6 @@ app.post('/api/bots/create', authenticate, async (req, res) => {
     try {
         const { username, password, gameId, options = {} } = req.body;
         
-        // Validate required fields
         if (!username || !password || !gameId) {
             return res.status(400).json({ 
                 success: false, 
@@ -189,7 +175,6 @@ app.post('/api/bots/create', authenticate, async (req, res) => {
             });
         }
         
-        // Validate gameId format (should be numeric)
         if (!/^\d+$/.test(gameId)) {
             return res.status(400).json({
                 success: false,
@@ -197,10 +182,8 @@ app.post('/api/bots/create', authenticate, async (req, res) => {
             });
         }
         
-        // Create bot
         const bot = await botManager.createBot(username, password, gameId, options);
         
-        // Log success
         console.log(`Bot created successfully: ${username} (Game: ${gameId}) at ${new Date().toISOString()}`);
         
         res.json({ 
@@ -211,7 +194,6 @@ app.post('/api/bots/create', authenticate, async (req, res) => {
     } catch (error) {
         console.error('Bot creation error:', error);
         
-        // Determine error type for better client feedback
         let statusCode = 500;
         let errorMessage = error.message;
         
@@ -343,11 +325,9 @@ app.post('/api/admin/login', (req, res) => {
             });
         }
         
-        // Simple comparison (in production, use bcrypt compare)
         if (username === process.env.ADMIN_USERNAME && 
             password === process.env.ADMIN_PASSWORD) {
             
-            // Regenerate session for security
             req.session.regenerate((err) => {
                 if (err) {
                     console.error('Session regeneration error:', err);
@@ -434,10 +414,8 @@ io.on('connection', (socket) => {
     const clientIp = socket.handshake.address;
     console.log(`Socket connected: ${socket.id} from ${clientIp}`);
 
-    // Send initial stats
     socket.emit('stats', botManager.getStats());
 
-    // Bot event handlers
     const botCreatedHandler = (bot) => {
         socket.emit('botCreated', bot);
         socket.emit('stats', botManager.getStats());
@@ -470,7 +448,6 @@ io.on('connection', (socket) => {
         socket.emit('stats', botManager.getStats());
     };
 
-    // Register event listeners
     botManager.on('botCreated', botCreatedHandler);
     botManager.on('botUpdate', botUpdateHandler);
     botManager.on('botActivity', botActivityHandler);
@@ -479,11 +456,9 @@ io.on('connection', (socket) => {
     botManager.on('botStarted', botStartedHandler);
     botManager.on('botRemoved', botRemovedHandler);
 
-    // Handle client disconnect
     socket.on('disconnect', () => {
         console.log(`Socket disconnected: ${socket.id}`);
         
-        // Clean up event listeners
         botManager.removeListener('botCreated', botCreatedHandler);
         botManager.removeListener('botUpdate', botUpdateHandler);
         botManager.removeListener('botActivity', botActivityHandler);
@@ -493,7 +468,6 @@ io.on('connection', (socket) => {
         botManager.removeListener('botRemoved', botRemovedHandler);
     });
 
-    // Handle socket errors
     socket.on('error', (error) => {
         console.error(`Socket error for ${socket.id}:`, error);
     });
@@ -511,7 +485,6 @@ app.use('/api/*', (req, res) => {
 app.use((err, req, res, next) => {
     console.error('Unhandled error:', err.stack);
     
-    // Don't expose internal error details in production
     const message = process.env.NODE_ENV === 'production' 
         ? 'Internal server error' 
         : err.message;
@@ -523,7 +496,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Catch-all route to serve frontend (for client-side routing)
+// Catch-all route to serve frontend
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../../frontend/index.html'));
 });
@@ -532,54 +505,47 @@ app.get('*', (req, res) => {
 const gracefulShutdown = () => {
     console.log('Received shutdown signal, cleaning up...');
     
-    // Stop all bots
     const bots = botManager.getBots();
     bots.forEach(bot => {
         botManager.stopBot(bot.id);
     });
     
-    // Close server
     server.close(() => {
         console.log('Server closed');
         process.exit(0);
     });
     
-    // Force exit after 10 seconds
     setTimeout(() => {
         console.error('Could not close connections in time, forcefully shutting down');
         process.exit(1);
     }, 10000);
 };
 
-// Listen for shutdown signals
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
     gracefulShutdown();
 });
 
-// Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Start server
+// Start server with IPv6 support
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '::', () => {
     console.log('='.repeat(50));
     console.log('🚀 Roblox Bot Control Panel');
     console.log('='.repeat(50));
-    console.log(`Server running on port: ${PORT}`);
+    console.log(`Server running on port: ${PORT} (IPv4 & IPv6)`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Frontend serving from: ${path.join(__dirname, '../../frontend')}`);
     console.log(`Health check: http://localhost:${PORT}/health`);
     console.log(`Ping test: http://localhost:${PORT}/ping`);
     console.log('='.repeat(50));
     
-    // Log warning about MemoryStore
     console.log('\n⚠️  Note: Using MemoryStore for sessions (not recommended for production)');
     console.log('   Consider adding MongoDB for production use\n');
 });
