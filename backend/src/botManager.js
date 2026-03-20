@@ -3,6 +3,8 @@ const EventEmitter = require('events');
 const crypto = require('crypto');
 const HttpsProxyAgent = require('https-proxy-agent');
 const { RateLimiter } = require('limiter');
+const fs = require('fs');
+const path = require('path');
 
 class BotManager extends EventEmitter {
     constructor() {
@@ -21,7 +23,16 @@ class BotManager extends EventEmitter {
             tokensPerInterval: 10,
             interval: 'second'
         });
+        
+        // Setup data directory
+        this.dataDir = path.join(__dirname, 'data');
+        if (!fs.existsSync(this.dataDir)) {
+            fs.mkdirSync(this.dataDir, { recursive: true });
+        }
+        this.botsFile = path.join(this.dataDir, 'bots.json');
+        
         this.loadProxies();
+        this.loadBotsFromFile();
     }
 
     loadProxies() {
@@ -47,6 +58,49 @@ class BotManager extends EventEmitter {
         const proxy = this.proxies.find(p => p.url === proxyUrl);
         if (proxy) {
             proxy.inUse = false;
+        }
+    }
+
+    loadBotsFromFile() {
+        try {
+            if (fs.existsSync(this.botsFile)) {
+                const data = JSON.parse(fs.readFileSync(this.botsFile, 'utf8'));
+                for (const bot of data) {
+                    this.bots.set(bot.id, bot);
+                    this.stats.totalBots++;
+                    if (bot.status === 'online') {
+                        this.stats.activeBots++;
+                    }
+                    this.stats.totalRequests += bot.stats?.requests || 0;
+                    this.stats.errors += bot.stats?.errors || 0;
+                    this.stats.totalPlayTime += bot.stats?.playTime || 0;
+                }
+                console.log(`Loaded ${data.length} saved bots from storage`);
+            }
+        } catch (error) {
+            console.error('Failed to load bots from file:', error);
+        }
+    }
+
+    saveBotsToFile() {
+        try {
+            const botsArray = Array.from(this.bots.values()).map(bot => ({
+                id: bot.id,
+                username: bot.username,
+                displayName: bot.displayName,
+                userId: bot.userId,
+                gameId: bot.gameId,
+                status: bot.status,
+                createdAt: bot.createdAt,
+                lastActive: bot.lastActive,
+                stats: bot.stats,
+                behavior: bot.behavior,
+                settings: bot.settings,
+                proxy: bot.proxy
+            }));
+            fs.writeFileSync(this.botsFile, JSON.stringify(botsArray, null, 2));
+        } catch (error) {
+            console.error('Failed to save bots to file:', error);
         }
     }
 
@@ -116,6 +170,8 @@ class BotManager extends EventEmitter {
             this.stats.totalBots++;
             this.stats.activeBots++;
             
+            this.saveBotsToFile();
+            
             this.emit('botCreated', this.sanitizeBot(bot));
             this.logBotActivity(bot.id, 'Bot created and logged in successfully');
             this.startBotBehavior(bot.id);
@@ -138,7 +194,7 @@ class BotManager extends EventEmitter {
     sanitizeBot(bot) {
         const sanitized = { ...bot };
         delete sanitized.security;
-        delete sanitized.settings?.password;
+        delete sanitized.password;
         return sanitized;
     }
 
@@ -160,9 +216,13 @@ class BotManager extends EventEmitter {
                 const action = await this.performHumanLikeAction(bot);
                 
                 bot.stats.actions++;
+                bot.stats.requests++;
                 bot.lastActive = new Date();
                 bot.stats.playTime += bot.settings.actionInterval / 1000;
+                this.stats.totalRequests++;
+                this.stats.totalPlayTime += bot.settings.actionInterval / 1000;
                 
+                this.saveBotsToFile();
                 this.emit('botUpdate', this.sanitizeBot(bot));
                 this.logBotActivity(bot.id, `Performed action: ${action.type}`);
                 
@@ -175,6 +235,7 @@ class BotManager extends EventEmitter {
                     error: error.message,
                     timestamp: new Date()
                 });
+                this.saveBotsToFile();
 
                 if (bot.settings.autoReconnect && this.shouldReconnect(error)) {
                     await this.reconnectBot(bot.id);
@@ -377,6 +438,7 @@ class BotManager extends EventEmitter {
             this.logBotActivity(bot.id, 'Attempting to reconnect...');
             bot.status = 'reconnecting';
             this.emit('botUpdate', this.sanitizeBot(bot));
+            this.saveBotsToFile();
 
             const loginOptions = {
                 username: bot.username,
@@ -393,6 +455,7 @@ class BotManager extends EventEmitter {
             bot.status = 'online';
             bot.security.loginAttempts = 0;
 
+            this.saveBotsToFile();
             this.logBotActivity(bot.id, 'Reconnected successfully');
             this.emit('botUpdate', this.sanitizeBot(bot));
             return true;
@@ -400,6 +463,7 @@ class BotManager extends EventEmitter {
             bot.security.loginAttempts++;
             if (bot.security.loginAttempts >= 3) {
                 bot.status = 'offline';
+                this.saveBotsToFile();
                 this.logBotActivity(bot.id, 'Failed to reconnect after 3 attempts');
             }
             return false;
@@ -446,6 +510,7 @@ class BotManager extends EventEmitter {
             if (bot.proxy) {
                 this.releaseProxy(bot.proxy);
             }
+            this.saveBotsToFile();
             this.logBotActivity(botId, 'Bot stopped');
             this.emit('botStopped', this.sanitizeBot(bot));
             return true;
@@ -455,9 +520,10 @@ class BotManager extends EventEmitter {
 
     startBot(botId) {
         const bot = this.bots.get(botId);
-        if (bot) {
+        if (bot && bot.status !== 'online') {
             bot.status = 'online';
             this.stats.activeBots++;
+            this.saveBotsToFile();
             this.startBotBehavior(botId);
             this.logBotActivity(botId, 'Bot started');
             this.emit('botStarted', this.sanitizeBot(bot));
@@ -472,6 +538,7 @@ class BotManager extends EventEmitter {
             this.stopBot(botId);
             this.bots.delete(botId);
             this.stats.totalBots--;
+            this.saveBotsToFile();
             this.logBotActivity(botId, 'Bot removed');
             this.emit('botRemoved', this.sanitizeBot(bot));
             return true;
@@ -490,8 +557,12 @@ class BotManager extends EventEmitter {
 
     getStats() {
         return {
-            ...this.stats,
-            bots: this.getBots(),
+            totalBots: this.stats.totalBots,
+            activeBots: this.stats.activeBots,
+            totalRequests: this.stats.totalRequests,
+            errors: this.stats.errors,
+            bannedAccounts: this.stats.bannedAccounts,
+            totalPlayTime: this.stats.totalPlayTime,
             proxyCount: this.proxies.length,
             availableProxies: this.proxies.filter(p => !p.inUse).length
         };
