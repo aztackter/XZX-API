@@ -1,109 +1,115 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot Control Panel</title>
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Roblox Bot Panel</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Top Navigation -->
-        <nav class="top-nav">
-            <div class="nav-left">
-                <span class="material-icons">dashboard</span>
-                <span class="nav-title">Bot Control Panel</span>
-            </div>
-            <div class="nav-right">
-                <button class="nav-icon" id="notificationsBtn">
-                    <span class="material-icons">notifications</span>
-                    <span class="badge" id="notificationBadge">0</span>
-                </button>
-                <button class="nav-icon" id="settingsBtn">
-                    <span class="material-icons">settings</span>
-                </button>
-                <div class="profile-icon">
-                    <span class="material-icons">account_circle</span>
-                </div>
-            </div>
-        </nav>
+  <div class="app-container">
+    <!-- Top Nav -->
+    <nav class="top-nav">
+      <div class="nav-left">
+        <span class="material-icons">dashboard</span>
+        <span class="nav-title">Bot Control Panel</span>
+      </div>
+      <div class="nav-right">
+        <button class="nav-icon" id="notificationsBtn">
+          <span class="material-icons">notifications</span>
+          <span class="badge" id="notificationBadge">0</span>
+        </button>
+        <div class="profile-icon"><span class="material-icons">account_circle</span></div>
+      </div>
+    </nav>
 
-        <!-- Main Layout -->
-        <div class="main-layout">
-            <!-- Sidebar -->
-            <aside class="sidebar">
-                <nav class="sidebar-nav">
-                    <a href="#" class="nav-item active" data-page="dashboard">
-                        <span class="material-icons">dashboard</span> Dashboard
-                    </a>
-                    <a href="#" class="nav-item" data-page="agents">
-                        <span class="material-icons">smart_toy</span> Agents
-                    </a>
-                    <a href="#" class="nav-item" data-page="activity">
-                        <span class="material-icons">history</span> Activity
-                    </a>
-                    <a href="#" class="nav-item" data-page="settings">
-                        <span class="material-icons">settings</span> Settings
-                    </a>
-                </nav>
-            </aside>
+    <!-- Main Layout -->
+    <div class="main-layout">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <a href="#" class="nav-item active" data-page="dashboard">
+          <span class="material-icons">dashboard</span>Dashboard
+        </a>
+        <a href="#" class="nav-item" data-page="agents">
+          <span class="material-icons">smart_toy</span>Agents
+        </a>
+        <a href="#" class="nav-item" data-page="activity">
+          <span class="material-icons">history</span>Activity
+        </a>
+      </aside>
 
-            <!-- Main Content -->
-            <main class="main-content">
-                <div class="stats-grid" id="statsGrid">
-                    <!-- Stats cards added dynamically -->
-                </div>
-                <div class="controls-bar">
-                    <div class="search-container">
-                        <span class="material-icons">search</span>
-                        <input type="text" placeholder="Search Agents..." id="searchAgents">
-                    </div>
-                    <button class="manage-btn" id="createBotBtn">
-                        <span class="material-icons">add</span> Create Bot
-                    </button>
-                </div>
-                <div class="agents-grid" id="agentsGrid">
-                    <!-- Bot cards added dynamically -->
-                </div>
-            </main>
-
-            <!-- Activity Panel -->
-            <aside class="activity-panel">
-                <div class="panel-header">
-                    <h3>Activity Log</h3>
-                    <div class="panel-tabs">
-                        <button class="tab active" data-tab="logs">Recent Logs</button>
-                        <button class="tab" data-tab="alerts">Alerts</button>
-                    </div>
-                </div>
-                <div class="activity-log" id="activityLog">
-                    <!-- Logs dynamically added -->
-                </div>
-            </aside>
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-header">Active Sessions</div>
+            <div class="stat-value" id="activeSessions">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">Tasks Running</div>
+            <div class="stat-value" id="tasksRunning">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">Errors</div>
+            <div class="stat-value" id="errorsDetected">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">Uptime</div>
+            <div class="stat-value" id="systemUptime">99.8%</div>
+          </div>
         </div>
-    </div>
 
-    <!-- Create Bot Modal -->
-    <div id="createBotModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Create Bot</h2>
-                <button class="close-modal">&times;</button>
-            </div>
-            <form id="createBotForm">
-                <input type="text" id="botUsername" placeholder="Username" required>
-                <input type="password" id="botPassword" placeholder="Password" required>
-                <input type="text" id="botGameId" placeholder="Game ID" required>
-                <div class="checkbox-group">
-                    <label><input type="checkbox" id="humanLike" checked> Human-like</label>
-                    <label><input type="checkbox" id="autoReconnect" checked> Auto Reconnect</label>
-                </div>
-                <button type="submit" class="submit-btn">Create Agent</button>
-            </form>
+        <!-- Controls -->
+        <div class="controls-bar">
+          <div class="search-container">
+            <span class="material-icons">search</span>
+            <input type="text" placeholder="Search Agents..." id="searchAgents">
+          </div>
+          <button class="manage-btn" id="createBotBtn">
+            <span class="material-icons">add</span>Create Bot
+          </button>
         </div>
-    </div>
 
-    <script src="script.js"></script>
+        <!-- Agents Grid -->
+        <div class="agents-grid" id="agentsGrid"></div>
+      </main>
+
+      <!-- Activity Panel -->
+      <aside class="activity-panel">
+        <div class="panel-header">
+          <h3>Activity Log</h3>
+          <div class="panel-tabs">
+            <button class="tab active" data-tab="logs">Recent Logs</button>
+            <button class="tab" data-tab="alerts">Alerts</button>
+          </div>
+        </div>
+        <div class="activity-log" id="activityLog"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Create Bot Modal -->
+  <div id="createBotModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Create Bot</h2>
+        <button class="close-modal">&times;</button>
+      </div>
+      <form id="createBotForm">
+        <input type="text" placeholder="Roblox Username" id="botUsername" required>
+        <input type="password" placeholder="Password" id="botPassword" required>
+        <input type="text" placeholder="Game ID" id="botGameId" required>
+        <div class="checkbox-group">
+          <label><input type="checkbox" id="humanLike" checked> Human-like Behavior</label>
+          <label><input type="checkbox" id="autoReconnect" checked> Auto Reconnect</label>
+        </div>
+        <button type="submit" class="submit-btn">Create Bot</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
 </body>
 </html>
