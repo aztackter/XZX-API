@@ -1,6 +1,7 @@
 let bots = [];
 let activityEntries = [];
 let startTime = Date.now();
+let notifications = [];
 
 let socket = null;
 try {
@@ -13,12 +14,14 @@ try {
     });
     
     socket.on('botCreated', (bot) => {
+        addNotification(`${bot.username} created successfully`, 'green');
         addActivityLog(bot.username, 'New bot agent created', 'green');
         fetchBots();
     });
     
     socket.on('botUpdate', () => fetchBots());
     socket.on('botError', (error) => {
+        addNotification(`Error: ${error.error}`, 'red');
         addActivityLog(error.username || error.botId || 'System', `Error: ${error.error}`, 'red');
     });
 } catch (e) {
@@ -28,11 +31,146 @@ try {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing...');
     setupEventListeners();
+    setupDropdowns();
     fetchStats();
     fetchBots();
     startUptimeCounter();
     startActivitySimulation();
 });
+
+function setupDropdowns() {
+    const notificationsBtn = document.getElementById('notificationsBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const notificationsDropdown = document.getElementById('notificationsDropdown');
+    const settingsDropdown = document.getElementById('settingsDropdown');
+    
+    if (notificationsBtn) {
+        notificationsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            notificationsDropdown.classList.toggle('show');
+            settingsDropdown.classList.remove('show');
+        });
+    }
+    
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            settingsDropdown.classList.toggle('show');
+            notificationsDropdown.classList.remove('show');
+        });
+    }
+    
+    document.addEventListener('click', () => {
+        notificationsDropdown?.classList.remove('show');
+        settingsDropdown?.classList.remove('show');
+    });
+    
+    const markAllRead = document.querySelector('.mark-all-read');
+    if (markAllRead) {
+        markAllRead.addEventListener('click', () => {
+            notifications = [];
+            updateNotificationsList();
+        });
+    }
+    
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    const pushNotificationsToggle = document.getElementById('pushNotificationsToggle');
+    const soundAlertsToggle = document.getElementById('soundAlertsToggle');
+    const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+    
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.body.classList.remove('light-mode');
+            } else {
+                document.body.classList.add('light-mode');
+            }
+        });
+    }
+    
+    if (pushNotificationsToggle) {
+        pushNotificationsToggle.addEventListener('change', async (e) => {
+            if (e.target.checked && 'Notification' in window) {
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    e.target.checked = false;
+                    alert('Please allow notifications in your browser settings');
+                }
+            }
+        });
+    }
+    
+    if (soundAlertsToggle) {
+        soundAlertsToggle.addEventListener('change', (e) => {
+            localStorage.setItem('soundAlerts', e.target.checked);
+        });
+        const saved = localStorage.getItem('soundAlerts');
+        if (saved !== null) soundAlertsToggle.checked = saved === 'true';
+    }
+    
+    if (autoRefreshToggle) {
+        autoRefreshToggle.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        });
+    }
+}
+
+let autoRefreshInterval = null;
+
+function startAutoRefresh() {
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    autoRefreshInterval = setInterval(() => {
+        fetchStats();
+        fetchBots();
+    }, 30000);
+}
+
+function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+}
+
+function addNotification(message, color) {
+    const notification = {
+        id: Date.now(),
+        message,
+        color,
+        timestamp: new Date()
+    };
+    notifications.unshift(notification);
+    if (notifications.length > 20) notifications.pop();
+    updateNotificationsList();
+    updateNotificationBadge();
+    
+    const pushEnabled = document.getElementById('pushNotificationsToggle')?.checked;
+    if (pushEnabled && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('Bot Control Panel', { body: message });
+    }
+}
+
+function updateNotificationsList() {
+    const container = document.getElementById('notificationsList');
+    if (!container) return;
+    
+    if (notifications.length === 0) {
+        container.innerHTML = '<div class="notification-item"><div class="notification-text">No new notifications</div></div>';
+        return;
+    }
+    
+    container.innerHTML = notifications.map(notif => `
+        <div class="notification-item">
+            <div class="notification-dot ${notif.color}"></div>
+            <div class="notification-text">${escapeHtml(notif.message)}</div>
+            <div class="notification-time">${getTimeAgo(notif.timestamp)}</div>
+        </div>
+    `).join('');
+}
 
 function setupEventListeners() {
     const createBtn = document.getElementById('createBotBtn');
@@ -43,10 +181,7 @@ function setupEventListeners() {
     if (createBtn) {
         createBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            console.log('Create button clicked');
-            if (modal) {
-                modal.style.display = 'flex';
-            }
+            if (modal) modal.style.display = 'flex';
         });
     }
     
@@ -58,16 +193,13 @@ function setupEventListeners() {
     
     if (modal) {
         modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
+            if (e.target === modal) modal.style.display = 'none';
         });
     }
     
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            console.log('Form submitted');
             await createBot();
         });
     }
@@ -217,7 +349,6 @@ async function createBot() {
     const gameId = document.getElementById('botGameId')?.value;
     const humanLike = document.getElementById('humanLike')?.checked || true;
     const autoReconnect = document.getElementById('autoReconnect')?.checked || true;
-    const useTempIP = document.getElementById('useTempIP')?.checked !== false;
     
     if (!username || !password || !gameId) {
         alert('Please fill in all fields');
@@ -232,7 +363,7 @@ async function createBot() {
         submitBtn.disabled = true;
     }
     
-    addActivityLog('System', `Creating bot "${username}"${useTempIP ? ' using temporary IP 24.145.49.159...' : '...'}`, 'yellow');
+    addActivityLog('System', `Creating bot "${username}"...`, 'yellow');
     
     try {
         const response = await fetch('/api/bots/create', {
@@ -246,8 +377,7 @@ async function createBot() {
                 gameId: gameId.trim(),
                 options: { 
                     humanLikeBehavior: humanLike, 
-                    autoReconnect,
-                    useTempIP: useTempIP
+                    autoReconnect
                 }
             })
         });
@@ -257,10 +387,11 @@ async function createBot() {
         if (data.success) {
             if (modal) modal.style.display = 'none';
             document.getElementById('createBotForm')?.reset();
-            addActivityLog('System', `✅ Bot agent "${username}" created successfully! Temp IP removed.`, 'green');
+            addNotification(`Bot "${username}" created successfully`, 'green');
+            addActivityLog('System', `✅ Bot agent "${username}" created successfully!`, 'green');
             fetchBots();
             updateNotificationBadge();
-            alert(`✅ Bot "${username}" created successfully!\n\nTemporary IP 24.145.49.159 was used only for creation and has been removed.`);
+            alert(`✅ Bot "${username}" created successfully!`);
         } else {
             let errorMsg = data.error;
             let detailedMsg = '';
@@ -270,21 +401,11 @@ async function createBot() {
                     '1. Check username and password are correct\n' +
                     '2. Account must NOT have 2FA (Two-Factor Authentication) enabled\n' +
                     '3. Account email must be verified\n' +
-                    '4. Try logging into Roblox website first to verify the account\n' +
-                    '5. If account is new, complete the email verification\n' +
-                    '6. Make sure the account is not locked or banned';
+                    '4. Try logging into Roblox website first to verify the account';
             } else if (errorMsg.includes('captcha')) {
-                detailedMsg = '\n\n🤖 CAPTCHA REQUIRED:\n' +
-                    'Roblox is requiring captcha verification.\n' +
-                    'Please log into Roblox website first to complete the verification.';
+                detailedMsg = '\n\n🤖 CAPTCHA REQUIRED:\nPlease log into Roblox website first to complete verification.';
             } else if (errorMsg.includes('2FA')) {
-                detailedMsg = '\n\n⚠️ 2FA ENABLED:\n' +
-                    'This account has Two-Factor Authentication enabled.\n' +
-                    'Bot accounts cannot have 2FA. Please create a new account without 2FA.';
-            } else if (errorMsg.includes('banned')) {
-                detailedMsg = '\n\n🚫 ACCOUNT BANNED:\n' +
-                    'This Roblox account is banned or locked.\n' +
-                    'Please use a different account.';
+                detailedMsg = '\n\n⚠️ 2FA ENABLED:\nBot accounts cannot have 2FA. Please create a new account without 2FA.';
             }
             
             addActivityLog('System', `❌ Failed to create bot: ${errorMsg}`, 'red');
@@ -293,7 +414,7 @@ async function createBot() {
     } catch (error) {
         console.error('Create bot error:', error);
         addActivityLog('System', `Error creating bot: ${error.message}`, 'red');
-        alert(`❌ Network error: ${error.message}\n\nMake sure the server is running.`);
+        alert(`❌ Network error: ${error.message}`);
     } finally {
         if (submitBtn) {
             submitBtn.textContent = 'Create Agent';
@@ -312,8 +433,6 @@ async function startBot(botId) {
         if (data.success) {
             addActivityLog(`Bot`, 'Bot started successfully', 'green');
             fetchBots();
-        } else {
-            addActivityLog(`Bot`, `Failed to start: ${data.message}`, 'red');
         }
     } catch (error) {
         addActivityLog(`Bot`, `Failed to start bot`, 'red');
@@ -352,10 +471,6 @@ async function removeBot(botId) {
     } catch (error) {
         addActivityLog(`Bot`, `Failed to remove bot`, 'red');
     }
-}
-
-function getHeaders() {
-    return { 'Content-Type': 'application/json' };
 }
 
 function addActivityLog(agent, action, color) {
@@ -451,11 +566,8 @@ function startActivitySimulation() {
 function updateNotificationBadge() {
     const badge = document.getElementById('notificationBadge');
     if (badge) {
-        const newActivities = activityEntries.filter(e => {
-            const seconds = Math.floor((new Date() - e.timestamp) / 1000);
-            return seconds < 60;
-        }).length;
-        badge.textContent = newActivities > 0 ? newActivities : '0';
+        const unreadCount = notifications.length;
+        badge.textContent = unreadCount > 0 ? unreadCount : '0';
     }
 }
 
@@ -495,7 +607,7 @@ function switchPage(page) {
             showRecentLogs();
             break;
         case 'settings':
-            alert('Settings panel coming soon');
+            document.getElementById('settingsBtn')?.click();
             break;
     }
 }
