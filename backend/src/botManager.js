@@ -4,12 +4,15 @@ const crypto = require('crypto');
 const HttpsProxyAgent = require('https-proxy-agent');
 const { RateLimiter } = require('limiter');
 const { Pool } = require('pg');
+const http = require('http');
+const https = require('https');
 
 class BotManager extends EventEmitter {
     constructor() {
         super();
         this.bots = new Map();
         this.proxies = [];
+        this.tempProxy = null;
         this.pool = null;
         this.stats = {
             totalBots: 0,
@@ -51,6 +54,40 @@ class BotManager extends EventEmitter {
         if (proxy) {
             proxy.inUse = false;
         }
+    }
+
+    // Create a temporary agent for a specific IP address
+    createTempIPAgent(ipAddress) {
+        // Create a custom agent that binds to a specific IP
+        const agent = new http.Agent({
+            localAddress: ipAddress,
+            family: 4 // IPv4
+        });
+        
+        const httpsAgent = new https.Agent({
+            localAddress: ipAddress,
+            family: 4
+        });
+        
+        return { httpAgent: agent, httpsAgent: httpsAgent };
+    }
+
+    // Use temporary IP for a single request
+    async makeRequestWithTempIP(url, options = {}, ipAddress = '24.145.49.159') {
+        const agents = this.createTempIPAgent(ipAddress);
+        
+        const fetchOptions = {
+            ...options,
+            agent: (url) => {
+                if (url.protocol === 'https:') {
+                    return agents.httpsAgent;
+                }
+                return agents.httpAgent;
+            }
+        };
+        
+        const response = await fetch(url, fetchOptions);
+        return response;
     }
 
     async initDatabase() {
@@ -186,10 +223,11 @@ class BotManager extends EventEmitter {
     }
 
     async createBot(username, password, gameId, options = {}) {
+        let tempProxyUsed = false;
+        
         try {
             await this.rateLimiter.removeTokens(1);
             
-            // Validate inputs
             if (!username || !password || !gameId) {
                 throw new Error('Username, password, and gameId are required');
             }
@@ -199,7 +237,16 @@ class BotManager extends EventEmitter {
             }
             
             const botId = `bot_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-            const proxy = options.useProxy ? this.getAvailableProxy() : null;
+            
+            // Use temporary IP for creation only
+            const useTempIP = options.useTempIP !== false;
+            let tempAgents = null;
+            
+            if (useTempIP) {
+                console.log(`Using temporary IP 24.145.49.159 for bot creation...`);
+                tempAgents = this.createTempIPAgent('24.145.49.159');
+                tempProxyUsed = true;
+            }
             
             const bot = {
                 id: botId,
@@ -208,7 +255,7 @@ class BotManager extends EventEmitter {
                 status: 'initializing',
                 createdAt: new Date(),
                 lastActive: new Date(),
-                proxy: proxy?.proxyAgent?.proxy?.href,
+                proxy: useTempIP ? 'temp_ip_24.145.49.159' : null,
                 stats: {
                     requests: 0,
                     errors: 0,
@@ -236,20 +283,32 @@ class BotManager extends EventEmitter {
                 activityLog: []
             };
 
-            const loginOptions = {
-                username: username.trim(),
-                password: password
-            };
+            // Store original noblox functions to restore later
+            const originalFetch = global.fetch;
             
-            if (proxy) {
-                loginOptions.agent = proxy;
+            // Override fetch to use temp IP if needed
+            if (tempAgents) {
+                global.fetch = async (url, fetchOptions = {}) => {
+                    const finalOptions = { ...fetchOptions };
+                    if (!finalOptions.agent) {
+                        if (url.startsWith('https://')) {
+                            finalOptions.agent = tempAgents.httpsAgent;
+                        } else {
+                            finalOptions.agent = tempAgents.httpAgent;
+                        }
+                    }
+                    return originalFetch(url, finalOptions);
+                };
             }
 
-            console.log(`Attempting to login to Roblox as: ${username}`);
+            console.log(`Attempting to login to Roblox as: ${username} via temporary IP`);
             
             let user;
             try {
-                user = await noblox.login(loginOptions);
+                user = await noblox.login({
+                    username: username.trim(),
+                    password: password
+                });
             } catch (loginError) {
                 console.error('Roblox login error:', loginError.message);
                 
@@ -268,6 +327,11 @@ class BotManager extends EventEmitter {
             
             const csrf = await noblox.getCSRFToken();
             
+            // Restore original fetch
+            if (tempAgents) {
+                global.fetch = originalFetch;
+            }
+            
             bot.security.cookie = user;
             bot.security.csrf = csrf;
             bot.security.lastLogin = new Date();
@@ -277,6 +341,9 @@ class BotManager extends EventEmitter {
             bot.userId = userInfo.UserID;
             bot.displayName = userInfo.UserName;
             
+            // Remove proxy reference after creation (bot no longer uses temp IP)
+            bot.proxy = null;
+            
             this.bots.set(bot.id, bot);
             this.stats.totalBots++;
             this.stats.activeBots++;
@@ -285,7 +352,10 @@ class BotManager extends EventEmitter {
             
             this.emit('botCreated', this.sanitizeBot(bot));
             this.logBotActivity(bot.id, `Bot created and logged in successfully as ${bot.displayName}`);
+            this.logBotActivity(bot.id, `Temporary IP 24.145.49.159 used for creation only - removed after login`);
             this.startBotBehavior(bot.id);
+            
+            console.log(`Bot created successfully. Temp IP removed. Bot now using normal network.`);
             
             return this.sanitizeBot(bot);
         } catch (error) {
@@ -576,7 +646,7 @@ class BotManager extends EventEmitter {
                 password: bot.password
             };
 
-            if (bot.proxy) {
+            if (bot.proxy && bot.proxy !== 'temp_ip_24.145.49.159') {
                 loginOptions.agent = new HttpsProxyAgent(bot.proxy);
             }
 
@@ -642,7 +712,7 @@ class BotManager extends EventEmitter {
         if (bot) {
             bot.status = 'offline';
             this.stats.activeBots--;
-            if (bot.proxy) {
+            if (bot.proxy && bot.proxy !== 'temp_ip_24.145.49.159') {
                 this.releaseProxy(bot.proxy);
             }
             await this.saveBotToDatabase(bot);
