@@ -109,7 +109,6 @@ body {
     font-size: 24px;
 }
 
-/* Dropdown Menus */
 .dropdown {
     position: fixed;
     top: 64px;
@@ -158,7 +157,6 @@ body {
     max-height: 350px;
 }
 
-/* Scrollbar for dropdown */
 .dropdown-content::-webkit-scrollbar {
     width: 4px;
 }
@@ -172,7 +170,6 @@ body {
     border-radius: 4px;
 }
 
-/* Notification Items */
 .notification-item {
     display: flex;
     align-items: center;
@@ -209,7 +206,6 @@ body {
     color: #64748b;
 }
 
-/* Settings Items */
 .settings-item {
     display: flex;
     align-items: center;
@@ -239,7 +235,6 @@ body {
     margin: 8px 0;
 }
 
-/* Toggle Switch */
 .switch {
     position: relative;
     display: inline-block;
@@ -285,7 +280,6 @@ input:checked + .slider:before {
     transform: translateX(22px);
 }
 
-/* Rest of the existing styles (keep all previous styles below) */
 .main-layout {
     display: flex;
     margin-top: 64px;
@@ -766,15 +760,34 @@ input:checked + .slider:before {
 
 .checkbox-group {
     display: flex;
-    gap: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
 }
 
 .checkbox-group label {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
+}
+
+.info-text {
+    font-size: 12px;
+    color: #94a3b8;
+    padding: 8px;
+    background: rgba(59, 130, 246, 0.1);
+    border-radius: 8px;
+    border-left: 3px solid #3b82f6;
+}
+
+.info-text a {
+    color: #3b82f6;
+    text-decoration: none;
+}
+
+.info-text a:hover {
+    text-decoration: underline;
 }
 
 .submit-btn {
@@ -838,5 +851,9 @@ input:checked + .slider:before {
         width: calc(100% - 40px);
         right: 20px;
         left: 20px;
+    }
+    .checkbox-group {
+        flex-direction: column;
+        gap: 8px;
     }
 }
