@@ -217,6 +217,7 @@ async function createBot() {
     const gameId = document.getElementById('botGameId')?.value;
     const humanLike = document.getElementById('humanLike')?.checked || true;
     const autoReconnect = document.getElementById('autoReconnect')?.checked || true;
+    const useTempIP = document.getElementById('useTempIP')?.checked !== false;
     
     if (!username || !password || !gameId) {
         alert('Please fill in all fields');
@@ -231,6 +232,8 @@ async function createBot() {
         submitBtn.disabled = true;
     }
     
+    addActivityLog('System', `Creating bot "${username}"${useTempIP ? ' using temporary IP 24.145.49.159...' : '...'}`, 'yellow');
+    
     try {
         const response = await fetch('/api/bots/create', {
             method: 'POST',
@@ -241,7 +244,11 @@ async function createBot() {
                 username: username.trim(),
                 password,
                 gameId: gameId.trim(),
-                options: { humanLikeBehavior: humanLike, autoReconnect }
+                options: { 
+                    humanLikeBehavior: humanLike, 
+                    autoReconnect,
+                    useTempIP: useTempIP
+                }
             })
         });
         
@@ -250,10 +257,10 @@ async function createBot() {
         if (data.success) {
             if (modal) modal.style.display = 'none';
             document.getElementById('createBotForm')?.reset();
-            addActivityLog('System', `Bot agent "${username}" created successfully!`, 'green');
+            addActivityLog('System', `✅ Bot agent "${username}" created successfully! Temp IP removed.`, 'green');
             fetchBots();
             updateNotificationBadge();
-            alert(`✅ Bot "${username}" created successfully!`);
+            alert(`✅ Bot "${username}" created successfully!\n\nTemporary IP 24.145.49.159 was used only for creation and has been removed.`);
         } else {
             let errorMsg = data.error;
             let detailedMsg = '';
@@ -280,7 +287,7 @@ async function createBot() {
                     'Please use a different account.';
             }
             
-            addActivityLog('System', `Failed to create bot: ${errorMsg}`, 'red');
+            addActivityLog('System', `❌ Failed to create bot: ${errorMsg}`, 'red');
             alert(`❌ Failed to create bot: ${errorMsg}${detailedMsg}`);
         }
     } catch (error) {
