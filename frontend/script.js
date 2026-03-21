@@ -1,7 +1,8 @@
 let bots = [];
 let activityEntries = [];
-let startTime = Date.now();
 let notifications = [];
+let startTime = Date.now();
+let autoRefreshInterval = null;
 
 let socket = null;
 try {
@@ -32,11 +33,81 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing...');
     setupEventListeners();
     setupDropdowns();
+    setupSettings();
     fetchStats();
     fetchBots();
     startUptimeCounter();
     startActivitySimulation();
+    startAutoRefresh();
 });
+
+function setupSettings() {
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    const pushNotificationsToggle = document.getElementById('pushNotificationsToggle');
+    const soundAlertsToggle = document.getElementById('soundAlertsToggle');
+    const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+    
+    if (darkModeToggle) {
+        const savedDarkMode = localStorage.getItem('darkMode');
+        if (savedDarkMode === 'false') {
+            darkModeToggle.checked = false;
+            document.body.classList.add('light-mode');
+        }
+        darkModeToggle.addEventListener('change', (e) => {
+            localStorage.setItem('darkMode', e.target.checked);
+            if (e.target.checked) {
+                document.body.classList.remove('light-mode');
+            } else {
+                document.body.classList.add('light-mode');
+            }
+        });
+    }
+    
+    if (pushNotificationsToggle) {
+        pushNotificationsToggle.addEventListener('change', async (e) => {
+            if (e.target.checked && 'Notification' in window) {
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    e.target.checked = false;
+                    alert('Please allow notifications in your browser settings');
+                }
+            }
+        });
+    }
+    
+    if (soundAlertsToggle) {
+        const saved = localStorage.getItem('soundAlerts');
+        if (saved !== null) soundAlertsToggle.checked = saved === 'true';
+        soundAlertsToggle.addEventListener('change', (e) => {
+            localStorage.setItem('soundAlerts', e.target.checked);
+        });
+    }
+    
+    if (autoRefreshToggle) {
+        autoRefreshToggle.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        });
+    }
+}
+
+function startAutoRefresh() {
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    autoRefreshInterval = setInterval(() => {
+        fetchStats();
+        fetchBots();
+    }, 30000);
+}
+
+function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+}
 
 function setupDropdowns() {
     const notificationsBtn = document.getElementById('notificationsBtn');
@@ -70,69 +141,16 @@ function setupDropdowns() {
         markAllRead.addEventListener('click', () => {
             notifications = [];
             updateNotificationsList();
+            updateNotificationBadge();
         });
     }
     
-    const darkModeToggle = document.getElementById('darkModeToggle');
-    const pushNotificationsToggle = document.getElementById('pushNotificationsToggle');
-    const soundAlertsToggle = document.getElementById('soundAlertsToggle');
-    const autoRefreshToggle = document.getElementById('autoRefreshToggle');
-    
-    if (darkModeToggle) {
-        darkModeToggle.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                document.body.classList.remove('light-mode');
-            } else {
-                document.body.classList.add('light-mode');
-            }
+    const howToGetCookie = document.getElementById('howToGetCookie');
+    if (howToGetCookie) {
+        howToGetCookie.addEventListener('click', (e) => {
+            e.preventDefault();
+            alert('To get your .ROBLOSECURITY cookie:\n\n1. Log into Roblox in Chrome/Firefox\n2. Open Developer Tools (F12)\n3. Go to Application tab → Cookies → https://www.roblox.com\n4. Copy the value of ".ROBLOSECURITY"\n\nPaste this value in the cookie field for more reliable login.');
         });
-    }
-    
-    if (pushNotificationsToggle) {
-        pushNotificationsToggle.addEventListener('change', async (e) => {
-            if (e.target.checked && 'Notification' in window) {
-                const permission = await Notification.requestPermission();
-                if (permission !== 'granted') {
-                    e.target.checked = false;
-                    alert('Please allow notifications in your browser settings');
-                }
-            }
-        });
-    }
-    
-    if (soundAlertsToggle) {
-        soundAlertsToggle.addEventListener('change', (e) => {
-            localStorage.setItem('soundAlerts', e.target.checked);
-        });
-        const saved = localStorage.getItem('soundAlerts');
-        if (saved !== null) soundAlertsToggle.checked = saved === 'true';
-    }
-    
-    if (autoRefreshToggle) {
-        autoRefreshToggle.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                startAutoRefresh();
-            } else {
-                stopAutoRefresh();
-            }
-        });
-    }
-}
-
-let autoRefreshInterval = null;
-
-function startAutoRefresh() {
-    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
-    autoRefreshInterval = setInterval(() => {
-        fetchStats();
-        fetchBots();
-    }, 30000);
-}
-
-function stopAutoRefresh() {
-    if (autoRefreshInterval) {
-        clearInterval(autoRefreshInterval);
-        autoRefreshInterval = null;
     }
 }
 
@@ -151,6 +169,12 @@ function addNotification(message, color) {
     const pushEnabled = document.getElementById('pushNotificationsToggle')?.checked;
     if (pushEnabled && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('Bot Control Panel', { body: message });
+    }
+    
+    const soundEnabled = document.getElementById('soundAlertsToggle')?.checked;
+    if (soundEnabled && color === 'red') {
+        const audio = new Audio('data:audio/wav;base64,U3RlYWx0aCBiZWNhdXNlIHdlIGNhbid0IGhhdmUgcmVhbCBzb3VuZCBpbiB0ZXh0');
+        audio.play().catch(() => {});
     }
 }
 
@@ -346,12 +370,14 @@ function filterAgents(searchTerm) {
 async function createBot() {
     const username = document.getElementById('botUsername')?.value;
     const password = document.getElementById('botPassword')?.value;
+    const cookie = document.getElementById('botCookie')?.value || null;
     const gameId = document.getElementById('botGameId')?.value;
     const humanLike = document.getElementById('humanLike')?.checked || true;
     const autoReconnect = document.getElementById('autoReconnect')?.checked || true;
+    const useTempIP = document.getElementById('useTempIP')?.checked !== false;
     
     if (!username || !password || !gameId) {
-        alert('Please fill in all fields');
+        alert('Please fill in all fields (Username, Password, Game ID)');
         return;
     }
     
@@ -363,23 +389,28 @@ async function createBot() {
         submitBtn.disabled = true;
     }
     
-    addActivityLog('System', `Creating bot "${username}"...`, 'yellow');
+    addActivityLog('System', `Creating bot "${username}"${useTempIP ? ' using temporary IP' : ''}...`, 'yellow');
     
     try {
+        const requestBody = {
+            username: username.trim(),
+            password,
+            gameId: gameId.trim(),
+            options: { 
+                humanLikeBehavior: humanLike, 
+                autoReconnect,
+                useTempIP
+            }
+        };
+        
+        if (cookie && cookie.trim()) {
+            requestBody.cookie = cookie.trim();
+        }
+        
         const response = await fetch('/api/bots/create', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                username: username.trim(),
-                password,
-                gameId: gameId.trim(),
-                options: { 
-                    humanLikeBehavior: humanLike, 
-                    autoReconnect
-                }
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
         });
         
         const data = await response.json();
@@ -399,11 +430,12 @@ async function createBot() {
             if (errorMsg.includes('credentials')) {
                 detailedMsg = '\n\n🔐 ROBLOX LOGIN ISSUES:\n' +
                     '1. Check username and password are correct\n' +
-                    '2. Account must NOT have 2FA (Two-Factor Authentication) enabled\n' +
+                    '2. Account must NOT have 2FA enabled\n' +
                     '3. Account email must be verified\n' +
-                    '4. Try logging into Roblox website first to verify the account';
+                    '4. Try logging into Roblox website first\n' +
+                    '5. Try using the .ROBLOSECURITY cookie option (see info text)';
             } else if (errorMsg.includes('captcha')) {
-                detailedMsg = '\n\n🤖 CAPTCHA REQUIRED:\nPlease log into Roblox website first to complete verification.';
+                detailedMsg = '\n\n🤖 CAPTCHA REQUIRED:\nPlease log into Roblox website first with this account to complete verification.';
             } else if (errorMsg.includes('2FA')) {
                 detailedMsg = '\n\n⚠️ 2FA ENABLED:\nBot accounts cannot have 2FA. Please create a new account without 2FA.';
             }
@@ -414,7 +446,7 @@ async function createBot() {
     } catch (error) {
         console.error('Create bot error:', error);
         addActivityLog('System', `Error creating bot: ${error.message}`, 'red');
-        alert(`❌ Network error: ${error.message}`);
+        alert(`❌ Network error: ${error.message}\n\nMake sure the server is running.`);
     } finally {
         if (submitBtn) {
             submitBtn.textContent = 'Create Agent';
@@ -433,6 +465,8 @@ async function startBot(botId) {
         if (data.success) {
             addActivityLog(`Bot`, 'Bot started successfully', 'green');
             fetchBots();
+        } else {
+            addActivityLog(`Bot`, `Failed to start: ${data.message}`, 'red');
         }
     } catch (error) {
         addActivityLog(`Bot`, `Failed to start bot`, 'red');
